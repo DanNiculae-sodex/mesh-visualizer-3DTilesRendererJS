@@ -1,0 +1,76 @@
+{
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "newProjectRoot": "projects",
+  "projects": {
+    "sdx-mesh-viewer": {
+      "projectType": "library",
+      "root": "projects/sdx-mesh-viewer",
+      "sourceRoot": "projects/sdx-mesh-viewer/src",
+      "prefix": "sdx",
+      "architect": {
+        "build": {
+          "builder": "@angular-devkit/build-angular:ng-packagr",
+          "options": {
+            "project": "projects/sdx-mesh-viewer/ng-package.json"
+          },
+          "configurations": {
+            "production": {
+              "tsConfig": "projects/sdx-mesh-viewer/tsconfig.lib.prod.json"
+            },
+            "development": {
+              "tsConfig": "projects/sdx-mesh-viewer/tsconfig.lib.json"
+            }
+          },
+          "defaultConfiguration": "production"
+        }
+      }
+    },
+    "mesh-viewer-dev": {
+      "projectType": "application",
+      "root": "projects/mesh-viewer-dev",
+      "sourceRoot": "projects/mesh-viewer-dev/src",
+      "prefix": "app",
+      "architect": {
+        "build": {
+          "builder": "@angular-devkit/build-angular:application",
+          "options": {
+            "outputPath": "dist/mesh-viewer-dev",
+            "index": "projects/mesh-viewer-dev/src/index.html",
+            "browser": "projects/mesh-viewer-dev/src/main.ts",
+            "polyfills": ["zone.js"],
+            "tsConfig": "projects/mesh-viewer-dev/tsconfig.app.json",
+            "assets": ["projects/mesh-viewer-dev/src/assets"],
+            "styles": ["projects/mesh-viewer-dev/src/styles.css"],
+            "scripts": []
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                { "type": "initial", "maximumWarning": "2mb", "maximumError": "5mb" }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular-devkit/build-angular:dev-server",
+          "configurations": {
+            "production": { "buildTarget": "mesh-viewer-dev:build:production" },
+            "development": { "buildTarget": "mesh-viewer-dev:build:development" }
+          },
+          "defaultConfiguration": "development"
+        }
+      }
+    }
+  },
+  "cli": {
+    "analytics": false
+  }
+}

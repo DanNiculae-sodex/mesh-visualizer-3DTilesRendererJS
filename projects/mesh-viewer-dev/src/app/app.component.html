@@ -1,0 +1,108 @@
+<div class="shell">
+  <aside class="panel">
+    <h1>SDX Mesh Viewer</h1>
+    <p class="hint">Dev-only shell for LOD streaming against Service 3D.</p>
+
+    <label>
+      API base
+      <input [(ngModel)]="apiBaseUrl" name="apiBaseUrl" />
+    </label>
+
+    <label>
+      Mesh id
+      <input [(ngModel)]="meshId" name="meshId" />
+    </label>
+
+    <label>
+      Access token
+      <input [(ngModel)]="accessToken" name="accessToken" type="password" autocomplete="off" />
+    </label>
+
+    <h2>Tile budget</h2>
+    <p class="hint">
+      Higher error target and lower cache limits load fewer tiles (better for weak devices).
+    </p>
+
+    <label>
+      Error target
+      <input [(ngModel)]="errorTarget" name="errorTarget" type="number" min="1" step="1" />
+    </label>
+
+    <label>
+      Max depth
+      <input [(ngModel)]="maxDepth" name="maxDepth" type="number" min="1" step="1" />
+    </label>
+
+    <label>
+      Cache max tiles
+      <input [(ngModel)]="cacheMaxTiles" name="cacheMaxTiles" type="number" min="10" step="10" />
+    </label>
+
+    <label>
+      Cache min tiles
+      <input [(ngModel)]="cacheMinTiles" name="cacheMinTiles" type="number" min="0" step="10" />
+    </label>
+
+    <label>
+      Cache max MB
+      <input [(ngModel)]="cacheMaxMb" name="cacheMaxMb" type="number" min="32" step="32" />
+    </label>
+
+    <label>
+      Max download jobs
+      <input [(ngModel)]="maxDownloadJobs" name="maxDownloadJobs" type="number" min="1" step="1" />
+    </label>
+
+    <label>
+      Max parse jobs
+      <input [(ngModel)]="maxParseJobs" name="maxParseJobs" type="number" min="1" step="1" />
+    </label>
+
+    <h2>Debug</h2>
+
+    <label class="checkbox">
+      <input [(ngModel)]="displayBoxBounds" name="displayBoxBounds" type="checkbox" />
+      Show tile bounding boxes
+    </label>
+
+    <label class="checkbox">
+      <input [(ngModel)]="displayParentBounds" name="displayParentBounds" type="checkbox" />
+      Show parent bounds
+    </label>
+
+    <button type="button" (click)="apply()">Load / reload</button>
+
+    @if (stats) {
+      <div class="stats">
+        <div>Visible: {{ stats.visible }}</div>
+        <div>Cached: {{ stats.cached }} / {{ stats.cacheMaxTiles }}</div>
+        <div>Downloading: {{ stats.downloading }}</div>
+        <div>Parsing: {{ stats.parsing }}</div>
+      </div>
+    }
+
+    <p class="footer">
+      Expects
+      <code>{{ apiBaseUrl }}/mesh/simple/{{ meshId }}/tileset.json</code>
+    </p>
+  </aside>
+
+  <main class="viewport">
+    @for (k of [loadKey]; track k) {
+      <sdx-mesh-viewer
+        [meshId]="meshId"
+        [apiBaseUrl]="apiBaseUrl"
+        [accessToken]="accessToken"
+        [errorTarget]="errorTarget"
+        [maxDepth]="maxDepth"
+        [cacheMaxTiles]="cacheMaxTiles"
+        [cacheMinTiles]="cacheMinTiles"
+        [cacheMaxMb]="cacheMaxMb"
+        [maxDownloadJobs]="maxDownloadJobs"
+        [maxParseJobs]="maxParseJobs"
+        [displayBoxBounds]="displayBoxBounds"
+        [displayParentBounds]="displayParentBounds"
+      />
+    }
+  </main>
+</div>

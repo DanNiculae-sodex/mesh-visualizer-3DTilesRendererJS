@@ -1,0 +1,11 @@
+{
+  "name": "sdx-mesh-viewer",
+  "version": "0.1.0",
+  "peerDependencies": {
+    "@angular/common": "^19.0.0",
+    "@angular/core": "^19.0.0",
+    "3d-tiles-renderer": "^0.4.0",
+    "three": "^0.172.0"
+  },
+  "sideEffects": false
+}
