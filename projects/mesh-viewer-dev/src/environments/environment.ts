@@ -1,5 +1,5 @@
 export const environment = {
   production: false,
-  apiBaseUrl: 'http://localhost:2546/service3d/v1',
+  apiBaseUrl: 'https://service3d.dev.eu.sdx-cloud.com/service3d/v1/',
   defaultMeshId: 'demo',
 };
