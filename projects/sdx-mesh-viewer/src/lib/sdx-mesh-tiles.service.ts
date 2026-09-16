@@ -23,6 +23,31 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 /** Origin-relative ENH: X east, Y north, Z height. Same frame as cube/Potree. */
 const WORLD_UP = new Vector3(0, 0, 1);
 
+/** Unfiltered IFC tilesets omit types=; strip it so tile GLBs return every component. */
+function stripIfcTypesQuery(url: string): string {
+  const hashIndex = url.indexOf('#');
+  const hash = hashIndex >= 0 ? url.slice(hashIndex) : '';
+  const withoutHash = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+  const queryIndex = withoutHash.indexOf('?');
+  if (queryIndex < 0) {
+    return url;
+  }
+  const path = withoutHash.slice(0, queryIndex);
+  const params = new URLSearchParams(withoutHash.slice(queryIndex + 1));
+  if (!params.has('types')) {
+    return url;
+  }
+  params.delete('types');
+  const query = params.toString();
+  return query ? `${path}?${query}${hash}` : `${path}${hash}`;
+}
+
+class StripIfcTypesPlugin {
+  preprocessURL(url: string): string {
+    return stripIfcTypesQuery(url);
+  }
+}
+
 /** Controls how aggressively tiles load / stay resident (3DTilesRendererJS knobs). */
 export interface SdxTileBudget {
   /** Screen-space error target. Higher = fewer / coarser tiles. Default 6. */
@@ -356,7 +381,7 @@ export class SdxMeshTilesService implements OnDestroy {
   }
 
   private createLayer(tilesetUrl: string, isIfc: boolean): LayerRuntime {
-    const tiles = new TilesRenderer(tilesetUrl);
+    const tiles = new TilesRenderer(isIfc ? stripIfcTypesQuery(tilesetUrl) : tilesetUrl);
     tiles.setCamera(this.camera!);
     tiles.setResolutionFromRenderer(this.camera!, this.renderer!);
 
@@ -373,6 +398,7 @@ export class SdxMeshTilesService implements OnDestroy {
     this.applyBudgetToTiles(tiles, this.budget);
 
     if (isIfc) {
+      tiles.registerPlugin(new StripIfcTypesPlugin());
       tiles.registerPlugin(new GLTFExtensionsPlugin({ metadata: true, autoDispose: false }));
       tiles.addEventListener('load-model', (event) => {
         this.patchLoadedModel(event.scene);

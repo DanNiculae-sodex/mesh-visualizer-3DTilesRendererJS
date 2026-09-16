@@ -53,6 +53,7 @@ Expected Service 3D paths:
 - Mesh: `{apiBaseUrl}/mesh/simple/{meshId}/tileset.json`
 - IFC: `{apiBaseUrl}/ifc/simple/{ifcId}/tileset.json` and `{apiBaseUrl}/ifc/simple/{ifcId}/manifest`
 
+An unfiltered IFC tileset request has no `types=` query, so each tile GLB contains every component.
 IFC product visibility and hover highlight update a GPU texture and do not refetch tiles. Tile OBBs use `DebugTilesPlugin` (`displayBoxBounds` / `displayParentBounds`) on both layers.
 
 The viewer treats tileset space as **origin-relative ENH, Z-up** (X east, Y north, Z height) — the same local frame as cube/Potree. Vertices and `boundingVolume.box` are already in that frame; the client does not remap axes or add `mesh.json.origin`. Camera and orbit use `+Z` as up. The camera frames the union of loaded mesh and IFC bounds.
