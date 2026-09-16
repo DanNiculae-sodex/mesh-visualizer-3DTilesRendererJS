@@ -2,14 +2,20 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
+  EventEmitter,
   Input,
   OnChanges,
   OnDestroy,
+  Output,
   SimpleChanges,
   ViewChild,
   inject,
 } from '@angular/core';
-import { SdxMeshTilesService, SdxMeshTilesStats } from './sdx-mesh-tiles.service';
+import {
+  IfcProduct,
+  SdxMeshTilesService,
+  SdxMeshTilesStats,
+} from './sdx-mesh-tiles.service';
 
 @Component({
   selector: 'sdx-mesh-viewer',
@@ -34,9 +40,12 @@ import { SdxMeshTilesService, SdxMeshTilesStats } from './sdx-mesh-tiles.service
 export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestroy {
   @ViewChild('host', { static: true }) hostRef!: ElementRef<HTMLDivElement>;
 
-  /** Full tileset.json URL, or leave empty and set meshId + apiBaseUrl. */
+  /** Full mesh tileset.json URL, or leave empty and set meshId + apiBaseUrl. */
   @Input() tilesetUrl = '';
   @Input() meshId = '';
+  /** Full IFC tileset.json URL, or leave empty and set ifcId + apiBaseUrl. */
+  @Input() ifcTilesetUrl = '';
+  @Input() ifcId = '';
   @Input() apiBaseUrl = 'http://localhost:2546/service3d/v1';
   @Input() accessToken = '';
 
@@ -60,12 +69,16 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
   /** Also draw ancestor tile bounds. */
   @Input() displayParentBounds = false;
 
+  @Output() productsLoaded = new EventEmitter<IfcProduct[]>();
+  @Output() loadError = new EventEmitter<string>();
+
   private readonly tilesService = inject(SdxMeshTilesService);
   private viewReady = false;
+  private reloadGeneration = 0;
 
   ngAfterViewInit(): void {
     this.viewReady = true;
-    this.reload();
+    this.startReload();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -75,10 +88,12 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     if (
       changes['tilesetUrl'] ||
       changes['meshId'] ||
+      changes['ifcTilesetUrl'] ||
+      changes['ifcId'] ||
       changes['apiBaseUrl'] ||
       changes['accessToken']
     ) {
-      this.reload();
+      this.startReload();
       return;
     }
     if (
@@ -101,6 +116,7 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
   }
 
   ngOnDestroy(): void {
+    this.reloadGeneration += 1;
     this.tilesService.dispose();
   }
 
@@ -109,18 +125,42 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     return this.tilesService.getStats();
   }
 
-  reload(): void {
-    const url = this.resolveTilesetUrl();
-    if (!url) {
-      return;
-    }
-    this.tilesService.mount(this.hostRef.nativeElement, {
-      tilesetUrl: url,
+  setProductVisible(componentId: number, visible: boolean): void {
+    this.tilesService.setProductVisible(componentId, visible);
+  }
+
+  setTypeVisible(ifcClass: string, visible: boolean): void {
+    this.tilesService.setTypeVisible(ifcClass, visible);
+  }
+
+  setProductHighlighted(componentId: number | null): void {
+    this.tilesService.setProductHighlighted(componentId);
+  }
+
+  showAllProducts(): void {
+    this.tilesService.showAllProducts();
+  }
+
+  async reload(): Promise<void> {
+    const generation = ++this.reloadGeneration;
+    this.tilesService.ensureScene(this.hostRef.nativeElement);
+    this.tilesService.setLayerOptions({
       accessToken: this.accessToken || undefined,
       displayBoxBounds: this.displayBoxBounds,
       displayParentBounds: this.displayParentBounds,
       ...this.budgetFromInputs(),
     });
+
+    const meshUrl = this.resolveMeshTilesetUrl();
+    this.tilesService.setMeshTileset(meshUrl || null);
+
+    const ifcUrl = this.resolveIfcTilesetUrl();
+    const products = ifcUrl ? await this.loadProducts() : [];
+    if (generation !== this.reloadGeneration) {
+      return;
+    }
+    this.tilesService.setIfcTileset(ifcUrl || null, products);
+    this.productsLoaded.emit(products);
   }
 
   private budgetFromInputs() {
@@ -135,7 +175,7 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     };
   }
 
-  private resolveTilesetUrl(): string {
+  private resolveMeshTilesetUrl(): string {
     if (this.tilesetUrl.trim()) {
       return this.tilesetUrl.trim();
     }
@@ -144,5 +184,43 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
     return `${base}/mesh/simple/${encodeURIComponent(this.meshId.trim())}/tileset.json`;
+  }
+
+  private resolveIfcTilesetUrl(): string {
+    if (this.ifcTilesetUrl.trim()) {
+      return this.ifcTilesetUrl.trim();
+    }
+    if (!this.ifcId.trim()) {
+      return '';
+    }
+    const base = this.apiBaseUrl.replace(/\/$/, '');
+    return `${base}/ifc/simple/${encodeURIComponent(this.ifcId.trim())}/tileset.json`;
+  }
+
+  private async loadProducts(): Promise<IfcProduct[]> {
+    if (!this.ifcId.trim() && !this.ifcTilesetUrl.trim()) {
+      return [];
+    }
+    if (!this.ifcId.trim()) {
+      return [];
+    }
+    const base = this.apiBaseUrl.replace(/\/$/, '');
+    const id = encodeURIComponent(this.ifcId.trim());
+    const headers: Record<string, string> = {};
+    if (this.accessToken.trim()) {
+      headers['Authorization'] = `Bearer ${this.accessToken.trim()}`;
+    }
+    const response = await fetch(`${base}/ifc/simple/${id}/manifest`, { headers });
+    if (!response.ok) {
+      throw new Error(`IFC manifest HTTP ${response.status}`);
+    }
+    const manifest = (await response.json()) as { components?: IfcProduct[] };
+    return manifest.components ?? [];
+  }
+
+  private startReload(): void {
+    void this.reload().catch((error: unknown) => {
+      this.loadError.emit(error instanceof Error ? error.message : String(error));
+    });
   }
 }

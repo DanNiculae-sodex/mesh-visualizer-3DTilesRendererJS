@@ -1,7 +1,10 @@
 <div class="shell">
   <aside class="panel">
     <h1>SDX Mesh Viewer</h1>
-    <p class="hint">Dev-only shell for LOD streaming against Service 3D.</p>
+    <p class="hint">
+      Dev-only shell for LOD mesh and typed IFC streaming against Service 3D.
+      Both layers share one Z-up ENH viewport (X east, Y north, Z height).
+    </p>
 
     <label>
       API base
@@ -14,9 +17,103 @@
     </label>
 
     <label>
+      IFC id
+      <input [(ngModel)]="ifcId" name="ifcId" />
+    </label>
+
+    <label>
       Access token
       <input [(ngModel)]="accessToken" name="accessToken" type="password" autocomplete="off" />
     </label>
+
+    <h2>IFC navigation</h2>
+    @if (catalogError) {
+      <p class="hint">{{ catalogError }}</p>
+    }
+    @if (catalog.length === 0 && !catalogError) {
+      <p class="hint">Load an IFC id to browse its elements.</p>
+    }
+    <div class="navigation-actions">
+      <button type="button" (click)="showAll()">Show all</button>
+      <input
+        [(ngModel)]="productSearch"
+        name="productSearch"
+        placeholder="Search model"
+        aria-label="Search model"
+        (ngModelChange)="onSearchChange($event)"
+      />
+    </div>
+    <p class="hint">{{ products.length }} objects</p>
+    <nav class="model-tree" aria-label="IFC model elements">
+      @for (category of filteredCatalog; track category.name) {
+        <details
+          class="tree-category"
+          [open]="category.expanded"
+          (toggle)="category.expanded = $any($event.target).open"
+        >
+          <summary>
+            <input
+              [(ngModel)]="category.enabled"
+              [indeterminate]="isCategoryPartial(category)"
+              [name]="'category-' + category.name"
+              type="checkbox"
+              (click)="$event.stopPropagation()"
+              (ngModelChange)="onCategoryToggle(category)"
+            />
+            <span>{{ category.name }}</span>
+            <small>{{ category.types.length }}</small>
+          </summary>
+          @if (category.expanded) {
+            <div class="tree-children">
+              @for (type of category.types; track type.ifc_class) {
+                @if (matchesType(category, type)) {
+                  <details
+                    class="tree-type"
+                    [open]="type.expanded"
+                    (toggle)="type.expanded = $any($event.target).open"
+                  >
+                    <summary>
+                      <input
+                        [(ngModel)]="type.enabled"
+                        [indeterminate]="isTypePartial(type)"
+                        [name]="'type-' + type.ifc_class"
+                        type="checkbox"
+                        (click)="$event.stopPropagation()"
+                        (ngModelChange)="onTypeToggle(category, type)"
+                      />
+                      <span>{{ type.ifc_class }}</span>
+                      <small>{{ type.products.length }}</small>
+                    </summary>
+                    @if (type.expanded) {
+                      <div class="tree-children product-list">
+                        @for (product of type.products; track product.component_id) {
+                          @if (matchesProduct(category, type, product)) {
+                            <label
+                              class="tree-product"
+                              (mouseenter)="onProductHover(product)"
+                              (mouseleave)="onProductHover(null)"
+                            >
+                              <input
+                                [(ngModel)]="product.enabled"
+                                [name]="'product-' + product.component_id"
+                                type="checkbox"
+                                (ngModelChange)="onProductToggle(category, type, product)"
+                              />
+                              <span>{{ productLabel(product) }}</span>
+                              <small>#{{ product.express_id }}</small>
+                            </label>
+                          }
+                        }
+                      </div>
+                    }
+                  </details>
+                }
+              }
+            </div>
+          }
+        </details>
+      }
+    </nav>
 
     <h2>Tile budget</h2>
     <p class="hint">
@@ -78,31 +175,35 @@
         <div>Cached: {{ stats.cached }} / {{ stats.cacheMaxTiles }}</div>
         <div>Downloading: {{ stats.downloading }}</div>
         <div>Parsing: {{ stats.parsing }}</div>
+        <div>Products: {{ stats.productsVisible }} / {{ stats.productsTotal }}</div>
       </div>
     }
 
     <p class="footer">
       Expects
       <code>{{ apiBaseUrl }}/mesh/simple/{{ meshId }}/tileset.json</code>
+      and
+      <code>{{ apiBaseUrl }}/ifc/simple/{{ ifcId }}/tileset.json</code>
     </p>
   </aside>
 
   <main class="viewport">
-    @for (k of [loadKey]; track k) {
-      <sdx-mesh-viewer
-        [meshId]="meshId"
-        [apiBaseUrl]="apiBaseUrl"
-        [accessToken]="accessToken"
-        [errorTarget]="errorTarget"
-        [maxDepth]="maxDepth"
-        [cacheMaxTiles]="cacheMaxTiles"
-        [cacheMinTiles]="cacheMinTiles"
-        [cacheMaxMb]="cacheMaxMb"
-        [maxDownloadJobs]="maxDownloadJobs"
-        [maxParseJobs]="maxParseJobs"
-        [displayBoxBounds]="displayBoxBounds"
-        [displayParentBounds]="displayParentBounds"
-      />
-    }
+    <sdx-mesh-viewer
+      [meshId]="meshId"
+      [ifcId]="ifcId"
+      [apiBaseUrl]="apiBaseUrl"
+      [accessToken]="accessToken"
+      [errorTarget]="errorTarget"
+      [maxDepth]="maxDepth"
+      [cacheMaxTiles]="cacheMaxTiles"
+      [cacheMinTiles]="cacheMinTiles"
+      [cacheMaxMb]="cacheMaxMb"
+      [maxDownloadJobs]="maxDownloadJobs"
+      [maxParseJobs]="maxParseJobs"
+      [displayBoxBounds]="displayBoxBounds"
+      [displayParentBounds]="displayParentBounds"
+      (productsLoaded)="onProductsLoaded($event)"
+      (loadError)="catalogError = $event"
+    />
   </main>
 </div>
