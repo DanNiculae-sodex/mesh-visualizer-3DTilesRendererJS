@@ -15,6 +15,7 @@ import {
   IfcProduct,
   SdxMeshTilesService,
   SdxMeshTilesStats,
+  VectorLayer,
 } from './sdx-mesh-tiles.service';
 
 @Component({
@@ -46,6 +47,8 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
   /** Full IFC tileset.json URL, or leave empty and set ifcId + apiBaseUrl. */
   @Input() ifcTilesetUrl = '';
   @Input() ifcId = '';
+  @Input() vectorTilesetUrl = '';
+  @Input() vectorId = '';
   @Input() apiBaseUrl = 'http://localhost:2546/service3d/v1';
   @Input() accessToken = '';
 
@@ -70,6 +73,7 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
   @Input() displayParentBounds = false;
 
   @Output() productsLoaded = new EventEmitter<IfcProduct[]>();
+  @Output() vectorLayersLoaded = new EventEmitter<VectorLayer[]>();
   @Output() loadError = new EventEmitter<string>();
 
   private readonly tilesService = inject(SdxMeshTilesService);
@@ -90,6 +94,8 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
       changes['meshId'] ||
       changes['ifcTilesetUrl'] ||
       changes['ifcId'] ||
+      changes['vectorTilesetUrl'] ||
+      changes['vectorId'] ||
       changes['apiBaseUrl'] ||
       changes['accessToken']
     ) {
@@ -161,6 +167,14 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     }
     this.tilesService.setIfcTileset(ifcUrl || null, products);
     this.productsLoaded.emit(products);
+
+    const vectorUrl = this.resolveVectorTilesetUrl();
+    const vectorLayers = vectorUrl ? await this.loadVectorLayers() : [];
+    if (generation !== this.reloadGeneration) {
+      return;
+    }
+    this.tilesService.setVectorTileset(vectorUrl || null);
+    this.vectorLayersLoaded.emit(vectorLayers);
   }
 
   private budgetFromInputs() {
@@ -195,6 +209,55 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
     return `${base}/ifc/simple/${encodeURIComponent(this.ifcId.trim())}/tileset.json`;
+  }
+
+  private resolveVectorTilesetUrl(layerNames?: string[]): string {
+    if (this.vectorTilesetUrl.trim()) {
+      return this.vectorTilesetUrl.trim();
+    }
+    if (!this.vectorId.trim()) {
+      return '';
+    }
+    const base = this.apiBaseUrl.replace(/\/$/, '');
+    const id = encodeURIComponent(this.vectorId.trim());
+    const url = `${base}/vector/simple/${id}/tileset.json`;
+    if (layerNames === undefined) {
+      return url;
+    }
+    if (layerNames.length === 0) {
+      return `${url}?layers=__none__`;
+    }
+    return `${url}?layers=${encodeURIComponent(layerNames.join(','))}`;
+  }
+
+  applyVectorLayerFilter(layerNames: string[] | null): void {
+    if (!this.vectorId.trim() && !this.vectorTilesetUrl.trim()) {
+      this.tilesService.setVectorTileset(null);
+      return;
+    }
+    if (layerNames === null) {
+      this.tilesService.setVectorTileset(this.resolveVectorTilesetUrl());
+      return;
+    }
+    this.tilesService.setVectorTileset(this.resolveVectorTilesetUrl(layerNames));
+  }
+
+  private async loadVectorLayers(): Promise<VectorLayer[]> {
+    if (!this.vectorId.trim()) {
+      return [];
+    }
+    const base = this.apiBaseUrl.replace(/\/$/, '');
+    const id = encodeURIComponent(this.vectorId.trim());
+    const headers: Record<string, string> = {};
+    if (this.accessToken.trim()) {
+      headers['Authorization'] = `Bearer ${this.accessToken.trim()}`;
+    }
+    const response = await fetch(`${base}/vector/simple/${id}/manifest`, { headers });
+    if (!response.ok) {
+      throw new Error(`Vector manifest HTTP ${response.status}`);
+    }
+    const manifest = (await response.json()) as { layers?: VectorLayer[] };
+    return manifest.layers ?? [];
   }
 
   private async loadProducts(): Promise<IfcProduct[]> {

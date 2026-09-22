@@ -2,8 +2,8 @@
   <aside class="panel">
     <h1>SDX Mesh Viewer</h1>
     <p class="hint">
-      Dev-only shell for LOD mesh and typed IFC streaming against Service 3D.
-      Both layers share one Z-up ENH viewport (X east, Y north, Z height).
+      Dev-only shell for LOD mesh, typed IFC, and DXF linework streaming against Service 3D.
+      All layers share one Z-up ENH viewport (X east, Y north, Z height).
     </p>
 
     <label>
@@ -22,9 +22,40 @@
     </label>
 
     <label>
+      Vector id
+      <input [(ngModel)]="vectorId" name="vectorId" />
+    </label>
+
+    <label>
       Access token
       <input [(ngModel)]="accessToken" name="accessToken" type="password" autocomplete="off" />
     </label>
+
+    <h2>Vector layers</h2>
+    @if (vectorError) {
+      <p class="hint">{{ vectorError }}</p>
+    }
+    @if (vectorLayers.length === 0 && !vectorError) {
+      <p class="hint">Load a vector id to toggle DXF layers.</p>
+    }
+    @if (vectorLayers.length > 0) {
+      <div class="navigation-actions">
+        <button type="button" (click)="showAllVectorLayers()">Show all layers</button>
+      </div>
+      <nav class="model-tree" aria-label="Vector layers">
+        @for (layer of vectorLayers; track layer.name) {
+          <label>
+            <input
+              [(ngModel)]="layer.enabled"
+              [name]="'vector-layer-' + layer.name"
+              type="checkbox"
+              (ngModelChange)="onVectorLayerToggle()"
+            />
+            <span>{{ layer.name }}</span>
+          </label>
+        }
+      </nav>
+    }
 
     <h2>IFC navigation</h2>
     @if (catalogError) {
@@ -184,6 +215,8 @@
       <code>{{ apiBaseUrl }}/mesh/simple/{{ meshId }}/tileset.json</code>
       and
       <code>{{ apiBaseUrl }}/ifc/simple/{{ ifcId }}/tileset.json</code>
+      and
+      <code>{{ apiBaseUrl }}/vector/simple/{{ vectorId }}/tileset.json</code>
     </p>
   </aside>
 
@@ -191,6 +224,7 @@
     <sdx-mesh-viewer
       [meshId]="meshId"
       [ifcId]="ifcId"
+      [vectorId]="vectorId"
       [apiBaseUrl]="apiBaseUrl"
       [accessToken]="accessToken"
       [errorTarget]="errorTarget"
@@ -203,6 +237,7 @@
       [displayBoxBounds]="displayBoxBounds"
       [displayParentBounds]="displayParentBounds"
       (productsLoaded)="onProductsLoaded($event)"
+      (vectorLayersLoaded)="onVectorLayersLoaded($event)"
       (loadError)="catalogError = $event"
     />
   </main>

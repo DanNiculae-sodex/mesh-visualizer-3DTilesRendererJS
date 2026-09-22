@@ -4,8 +4,13 @@ import {
   IfcProduct,
   SdxMeshTilesStats,
   SdxMeshViewerComponent,
+  VectorLayer,
 } from 'sdx-mesh-viewer';
 import { environment } from '../environments/environment';
+
+interface VectorLayerRow extends VectorLayer {
+  enabled: boolean;
+}
 
 interface CatalogProduct extends IfcProduct {
   enabled: boolean;
@@ -80,6 +85,7 @@ export class AppComponent implements OnDestroy {
   apiBaseUrl = environment.apiBaseUrl;
   meshId = environment.defaultMeshId;
   ifcId = environment.defaultIfcId;
+  vectorId = environment.defaultVectorId;
   accessToken = '';
 
   errorTarget = 6;
@@ -96,6 +102,8 @@ export class AppComponent implements OnDestroy {
   products: CatalogProduct[] = [];
   productSearch = '';
   catalogError = '';
+  vectorLayers: VectorLayerRow[] = [];
+  vectorError = '';
 
   stats: SdxMeshTilesStats | null = null;
   private statsTimer = 0;
@@ -157,6 +165,24 @@ export class AppComponent implements OnDestroy {
     } catch (error) {
       this.catalogError = error instanceof Error ? error.message : String(error);
     }
+  }
+
+  onVectorLayersLoaded(layers: VectorLayer[]): void {
+    this.vectorLayers = layers.map((layer) => ({ ...layer, enabled: true }));
+    this.vectorError = '';
+  }
+
+  onVectorLayerToggle(): void {
+    const enabled = this.vectorLayers.filter((layer) => layer.enabled).map((layer) => layer.name);
+    const allOn = enabled.length === this.vectorLayers.length;
+    this.viewer?.applyVectorLayerFilter(allOn ? null : enabled);
+  }
+
+  showAllVectorLayers(): void {
+    for (const layer of this.vectorLayers) {
+      layer.enabled = true;
+    }
+    this.viewer?.applyVectorLayerFilter(null);
   }
 
   onProductsLoaded(products: IfcProduct[]): void {

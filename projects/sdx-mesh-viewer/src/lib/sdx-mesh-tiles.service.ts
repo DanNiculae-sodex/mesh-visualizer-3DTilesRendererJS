@@ -4,6 +4,8 @@ import {
   Color,
   DataTexture,
   DirectionalLight,
+  Line,
+  LineSegments,
   Material,
   Mesh,
   NearestFilter,
@@ -24,7 +26,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 const WORLD_UP = new Vector3(0, 0, 1);
 
 /** Unfiltered IFC tilesets omit types=; strip it so tile GLBs return every component. */
-function stripIfcTypesQuery(url: string): string {
+function stripQueryParam(url: string, key: string): string {
   const hashIndex = url.indexOf('#');
   const hash = hashIndex >= 0 ? url.slice(hashIndex) : '';
   const withoutHash = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
@@ -34,12 +36,16 @@ function stripIfcTypesQuery(url: string): string {
   }
   const path = withoutHash.slice(0, queryIndex);
   const params = new URLSearchParams(withoutHash.slice(queryIndex + 1));
-  if (!params.has('types')) {
+  if (!params.has(key)) {
     return url;
   }
-  params.delete('types');
+  params.delete(key);
   const query = params.toString();
   return query ? `${path}?${query}${hash}` : `${path}${hash}`;
+}
+
+function stripIfcTypesQuery(url: string): string {
+  return stripQueryParam(url, 'types');
 }
 
 class StripIfcTypesPlugin {
@@ -66,11 +72,19 @@ export interface SdxTileBudget {
   maxParseJobs?: number;
 }
 
+export interface VectorLayer {
+  layer_id: number;
+  name: string;
+  color: number[];
+}
+
 export interface SdxMeshTilesOptions extends SdxTileBudget {
   tilesetUrl?: string;
   ifcTilesetUrl?: string;
+  vectorTilesetUrl?: string;
   accessToken?: string;
   products?: IfcProduct[];
+  vectorLayers?: VectorLayer[];
   /** Show OBB helpers for visible tiles (DebugTilesPlugin). */
   displayBoxBounds?: boolean;
   /** Also show ancestor bounding volumes. */
@@ -116,6 +130,7 @@ interface LayerRuntime {
 export class SdxMeshTilesService implements OnDestroy {
   private meshLayer: LayerRuntime | null = null;
   private ifcLayer: LayerRuntime | null = null;
+  private vectorLayer: LayerRuntime | null = null;
   private renderer: WebGLRenderer | null = null;
   private scene: Scene | null = null;
   private camera: PerspectiveCamera | null = null;
@@ -146,6 +161,8 @@ export class SdxMeshTilesService implements OnDestroy {
     this.meshLayer = null;
     this.disposeLayer(this.ifcLayer);
     this.ifcLayer = null;
+    this.disposeLayer(this.vectorLayer);
+    this.vectorLayer = null;
     this.disposeScene();
 
     const width = Math.max(host.clientWidth, 1);
@@ -190,6 +207,7 @@ export class SdxMeshTilesService implements OnDestroy {
       this.renderer.setSize(w, h);
       this.meshLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
       this.ifcLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
+      this.vectorLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
     });
     this.resizeObserver.observe(host);
 
@@ -202,6 +220,7 @@ export class SdxMeshTilesService implements OnDestroy {
       this.camera.updateMatrixWorld();
       this.meshLayer?.tiles.update();
       this.ifcLayer?.tiles.update();
+      this.vectorLayer?.tiles.update();
       this.renderer.render(this.scene, this.camera);
     };
     tick();
@@ -234,7 +253,7 @@ export class SdxMeshTilesService implements OnDestroy {
     if (!tilesetUrl || !this.scene || !this.camera || !this.renderer) {
       return;
     }
-    this.meshLayer = this.createLayer(tilesetUrl, false);
+    this.meshLayer = this.createLayer(tilesetUrl, 'mesh');
     this.scene.add(this.meshLayer.tiles.group);
   }
 
@@ -245,8 +264,18 @@ export class SdxMeshTilesService implements OnDestroy {
     if (!tilesetUrl || !this.scene || !this.camera || !this.renderer) {
       return;
     }
-    this.ifcLayer = this.createLayer(tilesetUrl, true);
+    this.ifcLayer = this.createLayer(tilesetUrl, 'ifc');
     this.scene.add(this.ifcLayer.tiles.group);
+  }
+
+  setVectorTileset(tilesetUrl: string | null): void {
+    this.disposeLayer(this.vectorLayer);
+    this.vectorLayer = null;
+    if (!tilesetUrl || !this.scene || !this.camera || !this.renderer) {
+      return;
+    }
+    this.vectorLayer = this.createLayer(tilesetUrl, 'vector');
+    this.scene.add(this.vectorLayer.tiles.group);
   }
 
   applyTileBudget(budget: SdxTileBudget): void {
@@ -256,6 +285,9 @@ export class SdxMeshTilesService implements OnDestroy {
     }
     if (this.ifcLayer) {
       this.applyBudgetToTiles(this.ifcLayer.tiles, this.budget);
+    }
+    if (this.vectorLayer) {
+      this.applyBudgetToTiles(this.vectorLayer.tiles, this.budget);
     }
   }
 
@@ -317,7 +349,7 @@ export class SdxMeshTilesService implements OnDestroy {
 
   setDisplayBoxBounds(enabled: boolean): void {
     this.displayBoxBounds = enabled;
-    for (const layer of [this.meshLayer, this.ifcLayer]) {
+    for (const layer of [this.meshLayer, this.ifcLayer, this.vectorLayer]) {
       if (!layer) {
         continue;
       }
@@ -328,7 +360,7 @@ export class SdxMeshTilesService implements OnDestroy {
 
   setDisplayParentBounds(enabled: boolean): void {
     this.displayParentBounds = enabled;
-    for (const layer of [this.meshLayer, this.ifcLayer]) {
+    for (const layer of [this.meshLayer, this.ifcLayer, this.vectorLayer]) {
       if (!layer) {
         continue;
       }
@@ -338,14 +370,14 @@ export class SdxMeshTilesService implements OnDestroy {
   }
 
   getTilesRenderer(): TilesRenderer | null {
-    return this.meshLayer?.tiles ?? this.ifcLayer?.tiles ?? null;
+    return this.meshLayer?.tiles ?? this.ifcLayer?.tiles ?? this.vectorLayer?.tiles ?? null;
   }
 
   getStats(): SdxMeshTilesStats | null {
-    if (!this.meshLayer && !this.ifcLayer) {
+    if (!this.meshLayer && !this.ifcLayer && !this.vectorLayer) {
       return null;
     }
-    const layers = [this.meshLayer, this.ifcLayer].filter(
+    const layers = [this.meshLayer, this.ifcLayer, this.vectorLayer].filter(
       (layer): layer is LayerRuntime => layer !== null,
     );
     const runtimes = layers.map((layer) => this.runtimeStats(layer.tiles));
@@ -376,12 +408,14 @@ export class SdxMeshTilesService implements OnDestroy {
     this.meshLayer = null;
     this.disposeLayer(this.ifcLayer);
     this.ifcLayer = null;
+    this.disposeLayer(this.vectorLayer);
+    this.vectorLayer = null;
     this.clearProducts();
     this.disposeScene();
   }
 
-  private createLayer(tilesetUrl: string, isIfc: boolean): LayerRuntime {
-    const tiles = new TilesRenderer(isIfc ? stripIfcTypesQuery(tilesetUrl) : tilesetUrl);
+  private createLayer(tilesetUrl: string, kind: 'mesh' | 'ifc' | 'vector'): LayerRuntime {
+    const tiles = new TilesRenderer(kind === 'ifc' ? stripIfcTypesQuery(tilesetUrl) : tilesetUrl);
     tiles.setCamera(this.camera!);
     tiles.setResolutionFromRenderer(this.camera!, this.renderer!);
 
@@ -397,11 +431,16 @@ export class SdxMeshTilesService implements OnDestroy {
 
     this.applyBudgetToTiles(tiles, this.budget);
 
-    if (isIfc) {
+    if (kind === 'ifc') {
       tiles.registerPlugin(new StripIfcTypesPlugin());
       tiles.registerPlugin(new GLTFExtensionsPlugin({ metadata: true, autoDispose: false }));
       tiles.addEventListener('load-model', (event) => {
         this.patchLoadedModel(event.scene);
+      });
+    }
+    if (kind === 'vector') {
+      tiles.addEventListener('load-model', (event) => {
+        this.patchVectorModel(event.scene);
       });
     }
 
@@ -414,7 +453,7 @@ export class SdxMeshTilesService implements OnDestroy {
 
     tiles.addEventListener('load-error', (event) => {
       const detail = event as unknown as { url?: string; error?: unknown };
-      console.error(isIfc ? '[sdx-ifc] tile load failed' : '[sdx-mesh] tile load failed', detail.url, detail.error);
+      console.error(`[sdx-${kind}] tile load failed`, detail.url, detail.error);
     });
 
     tiles.addEventListener('load-root-tileset', () => {
@@ -430,7 +469,7 @@ export class SdxMeshTilesService implements OnDestroy {
     }
     const combined = new Sphere();
     let hasSphere = false;
-    for (const layer of [this.meshLayer, this.ifcLayer]) {
+    for (const layer of [this.meshLayer, this.ifcLayer, this.vectorLayer]) {
       if (!layer) {
         continue;
       }
@@ -581,6 +620,21 @@ export class SdxMeshTilesService implements OnDestroy {
     this.visibilityData = new Uint8Array([255]);
     this.highlightData = new Uint8Array([0]);
     this.highlightedComponentId = null;
+  }
+
+  private patchVectorModel(scene: Object3D): void {
+    scene.traverse((object) => {
+      if (!(object instanceof Line) && !(object instanceof LineSegments) && !(object instanceof Mesh)) {
+        return;
+      }
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) {
+        if ('vertexColors' in material) {
+          (material as Material & { vertexColors: boolean }).vertexColors = true;
+        }
+        material.needsUpdate = true;
+      }
+    });
   }
 
   private patchLoadedModel(scene: Object3D): void {
