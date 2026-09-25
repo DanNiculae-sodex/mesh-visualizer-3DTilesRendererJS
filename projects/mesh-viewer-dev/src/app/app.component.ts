@@ -83,6 +83,7 @@ export class AppComponent implements OnDestroy {
   @ViewChild(SdxMeshViewerComponent) viewer?: SdxMeshViewerComponent;
 
   apiBaseUrl = environment.apiBaseUrl;
+  projectId = environment.defaultProjectId;
   meshId = environment.defaultMeshId;
   ifcId = environment.defaultIfcId;
   vectorId = environment.defaultVectorId;

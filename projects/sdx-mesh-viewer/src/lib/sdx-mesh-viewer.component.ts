@@ -41,10 +41,12 @@ import {
 export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestroy {
   @ViewChild('host', { static: true }) hostRef!: ElementRef<HTMLDivElement>;
 
-  /** Full mesh tileset.json URL, or leave empty and set meshId + apiBaseUrl. */
+  /** Full mesh tileset.json URL, or leave empty and set projectId + meshId + apiBaseUrl. */
   @Input() tilesetUrl = '';
+  /** Temporary until Nest resolves the project from the document, matching CS25D. */
+  @Input() projectId = '';
   @Input() meshId = '';
-  /** Full IFC tileset.json URL, or leave empty and set ifcId + apiBaseUrl. */
+  /** Full IFC tileset.json URL, or leave empty and set projectId + ifcId + apiBaseUrl. */
   @Input() ifcTilesetUrl = '';
   @Input() ifcId = '';
   @Input() vectorTilesetUrl = '';
@@ -91,6 +93,7 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     }
     if (
       changes['tilesetUrl'] ||
+      changes['projectId'] ||
       changes['meshId'] ||
       changes['ifcTilesetUrl'] ||
       changes['ifcId'] ||
@@ -193,34 +196,39 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     if (this.tilesetUrl.trim()) {
       return this.tilesetUrl.trim();
     }
-    if (!this.meshId.trim()) {
+    if (!this.projectId.trim() || !this.meshId.trim()) {
       return '';
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
-    return `${base}/mesh/simple/${encodeURIComponent(this.meshId.trim())}/tileset.json`;
+    const projectId = encodeURIComponent(this.projectId.trim());
+    const meshId = encodeURIComponent(this.meshId.trim());
+    return `${base}/mesh/simple/${projectId}/${meshId}/tileset.json`;
   }
 
   private resolveIfcTilesetUrl(): string {
     if (this.ifcTilesetUrl.trim()) {
       return this.ifcTilesetUrl.trim();
     }
-    if (!this.ifcId.trim()) {
+    if (!this.projectId.trim() || !this.ifcId.trim()) {
       return '';
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
-    return `${base}/ifc/simple/${encodeURIComponent(this.ifcId.trim())}/tileset.json`;
+    const projectId = encodeURIComponent(this.projectId.trim());
+    const ifcId = encodeURIComponent(this.ifcId.trim());
+    return `${base}/ifc/simple/${projectId}/${ifcId}/tileset.json`;
   }
 
   private resolveVectorTilesetUrl(layerNames?: string[]): string {
     if (this.vectorTilesetUrl.trim()) {
       return this.vectorTilesetUrl.trim();
     }
-    if (!this.vectorId.trim()) {
+    if (!this.projectId.trim() || !this.vectorId.trim()) {
       return '';
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
+    const projectId = encodeURIComponent(this.projectId.trim());
     const id = encodeURIComponent(this.vectorId.trim());
-    const url = `${base}/vector/simple/${id}/tileset.json`;
+    const url = `${base}/vector/simple/${projectId}/${id}/tileset.json`;
     if (layerNames === undefined) {
       return url;
     }
@@ -243,16 +251,17 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
   }
 
   private async loadVectorLayers(): Promise<VectorLayer[]> {
-    if (!this.vectorId.trim()) {
+    if (!this.projectId.trim() || !this.vectorId.trim()) {
       return [];
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
+    const projectId = encodeURIComponent(this.projectId.trim());
     const id = encodeURIComponent(this.vectorId.trim());
     const headers: Record<string, string> = {};
     if (this.accessToken.trim()) {
       headers['Authorization'] = `Bearer ${this.accessToken.trim()}`;
     }
-    const response = await fetch(`${base}/vector/simple/${id}/manifest`, { headers });
+    const response = await fetch(`${base}/vector/simple/${projectId}/${id}/manifest`, { headers });
     if (!response.ok) {
       throw new Error(`Vector manifest HTTP ${response.status}`);
     }
@@ -264,16 +273,17 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     if (!this.ifcId.trim() && !this.ifcTilesetUrl.trim()) {
       return [];
     }
-    if (!this.ifcId.trim()) {
+    if (!this.projectId.trim() || !this.ifcId.trim()) {
       return [];
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
+    const projectId = encodeURIComponent(this.projectId.trim());
     const id = encodeURIComponent(this.ifcId.trim());
     const headers: Record<string, string> = {};
     if (this.accessToken.trim()) {
       headers['Authorization'] = `Bearer ${this.accessToken.trim()}`;
     }
-    const response = await fetch(`${base}/ifc/simple/${id}/manifest`, { headers });
+    const response = await fetch(`${base}/ifc/simple/${projectId}/${id}/manifest`, { headers });
     if (!response.ok) {
       throw new Error(`IFC manifest HTTP ${response.status}`);
     }

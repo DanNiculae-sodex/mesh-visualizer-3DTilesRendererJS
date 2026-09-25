@@ -12,6 +12,11 @@
     </label>
 
     <label>
+      Project id
+      <input [(ngModel)]="projectId" name="projectId" />
+    </label>
+
+    <label>
       Mesh id
       <input [(ngModel)]="meshId" name="meshId" />
     </label>
@@ -212,16 +217,17 @@
 
     <p class="footer">
       Expects
-      <code>{{ apiBaseUrl }}/mesh/simple/{{ meshId }}/tileset.json</code>
+      <code>{{ apiBaseUrl }}/mesh/simple/{{ projectId }}/{{ meshId }}/tileset.json</code>
       and
-      <code>{{ apiBaseUrl }}/ifc/simple/{{ ifcId }}/tileset.json</code>
+      <code>{{ apiBaseUrl }}/ifc/simple/{{ projectId }}/{{ ifcId }}/tileset.json</code>
       and
-      <code>{{ apiBaseUrl }}/vector/simple/{{ vectorId }}/tileset.json</code>
+      <code>{{ apiBaseUrl }}/vector/simple/{{ projectId }}/{{ vectorId }}/tileset.json</code>
     </p>
   </aside>
 
   <main class="viewport">
     <sdx-mesh-viewer
+      [projectId]="projectId"
       [meshId]="meshId"
       [ifcId]="ifcId"
       [vectorId]="vectorId"
