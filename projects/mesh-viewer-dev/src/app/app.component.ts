@@ -4,11 +4,11 @@ import {
   IfcProduct,
   SdxMeshTilesStats,
   SdxMeshViewerComponent,
-  VectorLayer,
+  LineworkLayer,
 } from 'sdx-mesh-viewer';
 import { environment } from '../environments/environment';
 
-interface VectorLayerRow extends VectorLayer {
+interface LineworkLayerRow extends LineworkLayer {
   enabled: boolean;
 }
 
@@ -86,7 +86,7 @@ export class AppComponent implements OnDestroy {
   projectId = environment.defaultProjectId;
   meshId = environment.defaultMeshId;
   ifcId = environment.defaultIfcId;
-  vectorId = environment.defaultVectorId;
+  lineworkId = environment.defaultLineworkId;
   accessToken = '';
 
   errorTarget = 6;
@@ -103,8 +103,8 @@ export class AppComponent implements OnDestroy {
   products: CatalogProduct[] = [];
   productSearch = '';
   catalogError = '';
-  vectorLayers: VectorLayerRow[] = [];
-  vectorError = '';
+  lineworkLayers: LineworkLayerRow[] = [];
+  lineworkError = '';
 
   stats: SdxMeshTilesStats | null = null;
   private statsTimer = 0;
@@ -168,22 +168,22 @@ export class AppComponent implements OnDestroy {
     }
   }
 
-  onVectorLayersLoaded(layers: VectorLayer[]): void {
-    this.vectorLayers = layers.map((layer) => ({ ...layer, enabled: true }));
-    this.vectorError = '';
+  onLineworkLayersLoaded(layers: LineworkLayer[]): void {
+    this.lineworkLayers = layers.map((layer) => ({ ...layer, enabled: true }));
+    this.lineworkError = '';
   }
 
-  onVectorLayerToggle(): void {
-    const enabled = this.vectorLayers.filter((layer) => layer.enabled).map((layer) => layer.name);
-    const allOn = enabled.length === this.vectorLayers.length;
-    this.viewer?.applyVectorLayerFilter(allOn ? null : enabled);
+  onLineworkLayerToggle(): void {
+    const enabled = this.lineworkLayers.filter((layer) => layer.enabled).map((layer) => layer.name);
+    const allOn = enabled.length === this.lineworkLayers.length;
+    this.viewer?.applyLineworkLayerFilter(allOn ? null : enabled);
   }
 
-  showAllVectorLayers(): void {
-    for (const layer of this.vectorLayers) {
+  showAllLineworkLayers(): void {
+    for (const layer of this.lineworkLayers) {
       layer.enabled = true;
     }
-    this.viewer?.applyVectorLayerFilter(null);
+    this.viewer?.applyLineworkLayerFilter(null);
   }
 
   onProductsLoaded(products: IfcProduct[]): void {

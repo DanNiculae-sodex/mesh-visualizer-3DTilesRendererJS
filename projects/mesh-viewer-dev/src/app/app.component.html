@@ -27,8 +27,8 @@
     </label>
 
     <label>
-      Vector id
-      <input [(ngModel)]="vectorId" name="vectorId" />
+      Linework id
+      <input [(ngModel)]="lineworkId" name="lineworkId" />
     </label>
 
     <label>
@@ -36,25 +36,25 @@
       <input [(ngModel)]="accessToken" name="accessToken" type="password" autocomplete="off" />
     </label>
 
-    <h2>Vector layers</h2>
-    @if (vectorError) {
-      <p class="hint">{{ vectorError }}</p>
+    <h2>Linework layers</h2>
+    @if (lineworkError) {
+      <p class="hint">{{ lineworkError }}</p>
     }
-    @if (vectorLayers.length === 0 && !vectorError) {
-      <p class="hint">Load a vector id to toggle DXF layers.</p>
+    @if (lineworkLayers.length === 0 && !lineworkError) {
+      <p class="hint">Load a linework id to toggle DXF layers.</p>
     }
-    @if (vectorLayers.length > 0) {
+    @if (lineworkLayers.length > 0) {
       <div class="navigation-actions">
-        <button type="button" (click)="showAllVectorLayers()">Show all layers</button>
+        <button type="button" (click)="showAllLineworkLayers()">Show all layers</button>
       </div>
-      <nav class="model-tree" aria-label="Vector layers">
-        @for (layer of vectorLayers; track layer.name) {
+      <nav class="model-tree" aria-label="Linework layers">
+        @for (layer of lineworkLayers; track layer.name) {
           <label>
             <input
               [(ngModel)]="layer.enabled"
-              [name]="'vector-layer-' + layer.name"
+              [name]="'linework-layer-' + layer.name"
               type="checkbox"
-              (ngModelChange)="onVectorLayerToggle()"
+              (ngModelChange)="onLineworkLayerToggle()"
             />
             <span>{{ layer.name }}</span>
           </label>
@@ -221,7 +221,7 @@
       and
       <code>{{ apiBaseUrl }}/ifc/simple/{{ projectId }}/{{ ifcId }}/tileset.json</code>
       and
-      <code>{{ apiBaseUrl }}/vector/simple/{{ projectId }}/{{ vectorId }}/tileset.json</code>
+      <code>{{ apiBaseUrl }}/linework/simple/{{ projectId }}/{{ lineworkId }}/tileset.json</code>
     </p>
   </aside>
 
@@ -230,7 +230,7 @@
       [projectId]="projectId"
       [meshId]="meshId"
       [ifcId]="ifcId"
-      [vectorId]="vectorId"
+      [lineworkId]="lineworkId"
       [apiBaseUrl]="apiBaseUrl"
       [accessToken]="accessToken"
       [errorTarget]="errorTarget"
@@ -243,7 +243,7 @@
       [displayBoxBounds]="displayBoxBounds"
       [displayParentBounds]="displayParentBounds"
       (productsLoaded)="onProductsLoaded($event)"
-      (vectorLayersLoaded)="onVectorLayersLoaded($event)"
+      (lineworkLayersLoaded)="onLineworkLayersLoaded($event)"
       (loadError)="catalogError = $event"
     />
   </main>

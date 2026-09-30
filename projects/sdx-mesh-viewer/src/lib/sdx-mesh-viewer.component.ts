@@ -15,7 +15,7 @@ import {
   IfcProduct,
   SdxMeshTilesService,
   SdxMeshTilesStats,
-  VectorLayer,
+  LineworkLayer,
 } from './sdx-mesh-tiles.service';
 
 @Component({
@@ -49,8 +49,8 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
   /** Full IFC tileset.json URL, or leave empty and set projectId + ifcId + apiBaseUrl. */
   @Input() ifcTilesetUrl = '';
   @Input() ifcId = '';
-  @Input() vectorTilesetUrl = '';
-  @Input() vectorId = '';
+  @Input() lineworkTilesetUrl = '';
+  @Input() lineworkId = '';
   @Input() apiBaseUrl = 'http://localhost:2546/service3d/v1';
   @Input() accessToken = '';
 
@@ -75,7 +75,7 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
   @Input() displayParentBounds = false;
 
   @Output() productsLoaded = new EventEmitter<IfcProduct[]>();
-  @Output() vectorLayersLoaded = new EventEmitter<VectorLayer[]>();
+  @Output() lineworkLayersLoaded = new EventEmitter<LineworkLayer[]>();
   @Output() loadError = new EventEmitter<string>();
 
   private readonly tilesService = inject(SdxMeshTilesService);
@@ -97,8 +97,8 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
       changes['meshId'] ||
       changes['ifcTilesetUrl'] ||
       changes['ifcId'] ||
-      changes['vectorTilesetUrl'] ||
-      changes['vectorId'] ||
+      changes['lineworkTilesetUrl'] ||
+      changes['lineworkId'] ||
       changes['apiBaseUrl'] ||
       changes['accessToken']
     ) {
@@ -171,13 +171,13 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     this.tilesService.setIfcTileset(ifcUrl || null, products);
     this.productsLoaded.emit(products);
 
-    const vectorUrl = this.resolveVectorTilesetUrl();
-    const vectorLayers = vectorUrl ? await this.loadVectorLayers() : [];
+    const lineworkUrl = this.resolveLineworkTilesetUrl();
+    const lineworkLayers = lineworkUrl ? await this.loadLineworkLayers() : [];
     if (generation !== this.reloadGeneration) {
       return;
     }
-    this.tilesService.setVectorTileset(vectorUrl || null);
-    this.vectorLayersLoaded.emit(vectorLayers);
+    this.tilesService.setLineworkTileset(lineworkUrl || null);
+    this.lineworkLayersLoaded.emit(lineworkLayers);
   }
 
   private budgetFromInputs() {
@@ -218,17 +218,17 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     return `${base}/ifc/simple/${projectId}/${ifcId}/tileset.json`;
   }
 
-  private resolveVectorTilesetUrl(layerNames?: string[]): string {
-    if (this.vectorTilesetUrl.trim()) {
-      return this.vectorTilesetUrl.trim();
+  private resolveLineworkTilesetUrl(layerNames?: string[]): string {
+    if (this.lineworkTilesetUrl.trim()) {
+      return this.lineworkTilesetUrl.trim();
     }
-    if (!this.projectId.trim() || !this.vectorId.trim()) {
+    if (!this.projectId.trim() || !this.lineworkId.trim()) {
       return '';
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
     const projectId = encodeURIComponent(this.projectId.trim());
-    const id = encodeURIComponent(this.vectorId.trim());
-    const url = `${base}/vector/simple/${projectId}/${id}/tileset.json`;
+    const id = encodeURIComponent(this.lineworkId.trim());
+    const url = `${base}/linework/simple/${projectId}/${id}/tileset.json`;
     if (layerNames === undefined) {
       return url;
     }
@@ -238,34 +238,34 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     return `${url}?layers=${encodeURIComponent(layerNames.join(','))}`;
   }
 
-  applyVectorLayerFilter(layerNames: string[] | null): void {
-    if (!this.vectorId.trim() && !this.vectorTilesetUrl.trim()) {
-      this.tilesService.setVectorTileset(null);
+  applyLineworkLayerFilter(layerNames: string[] | null): void {
+    if (!this.lineworkId.trim() && !this.lineworkTilesetUrl.trim()) {
+      this.tilesService.setLineworkTileset(null);
       return;
     }
     if (layerNames === null) {
-      this.tilesService.setVectorTileset(this.resolveVectorTilesetUrl());
+      this.tilesService.setLineworkTileset(this.resolveLineworkTilesetUrl());
       return;
     }
-    this.tilesService.setVectorTileset(this.resolveVectorTilesetUrl(layerNames));
+    this.tilesService.setLineworkTileset(this.resolveLineworkTilesetUrl(layerNames));
   }
 
-  private async loadVectorLayers(): Promise<VectorLayer[]> {
-    if (!this.projectId.trim() || !this.vectorId.trim()) {
+  private async loadLineworkLayers(): Promise<LineworkLayer[]> {
+    if (!this.projectId.trim() || !this.lineworkId.trim()) {
       return [];
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
     const projectId = encodeURIComponent(this.projectId.trim());
-    const id = encodeURIComponent(this.vectorId.trim());
+    const id = encodeURIComponent(this.lineworkId.trim());
     const headers: Record<string, string> = {};
     if (this.accessToken.trim()) {
       headers['Authorization'] = `Bearer ${this.accessToken.trim()}`;
     }
-    const response = await fetch(`${base}/vector/simple/${projectId}/${id}/manifest`, { headers });
+    const response = await fetch(`${base}/linework/simple/${projectId}/${id}/manifest`, { headers });
     if (!response.ok) {
-      throw new Error(`Vector manifest HTTP ${response.status}`);
+      throw new Error(`Linework manifest HTTP ${response.status}`);
     }
-    const manifest = (await response.json()) as { layers?: VectorLayer[] };
+    const manifest = (await response.json()) as { layers?: LineworkLayer[] };
     return manifest.layers ?? [];
   }
 

@@ -4,5 +4,5 @@ export const environment = {
   defaultProjectId: '',
   defaultMeshId: 'demo',
   defaultIfcId: '',
-  defaultVectorId: '',
+  defaultLineworkId: '',
 };

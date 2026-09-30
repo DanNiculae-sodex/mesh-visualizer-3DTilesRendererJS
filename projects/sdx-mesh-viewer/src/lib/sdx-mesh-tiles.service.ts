@@ -72,7 +72,7 @@ export interface SdxTileBudget {
   maxParseJobs?: number;
 }
 
-export interface VectorLayer {
+export interface LineworkLayer {
   layer_id: number;
   name: string;
   color: number[];
@@ -81,10 +81,10 @@ export interface VectorLayer {
 export interface SdxMeshTilesOptions extends SdxTileBudget {
   tilesetUrl?: string;
   ifcTilesetUrl?: string;
-  vectorTilesetUrl?: string;
+  lineworkTilesetUrl?: string;
   accessToken?: string;
   products?: IfcProduct[];
-  vectorLayers?: VectorLayer[];
+  lineworkLayers?: LineworkLayer[];
   /** Show OBB helpers for visible tiles (DebugTilesPlugin). */
   displayBoxBounds?: boolean;
   /** Also show ancestor bounding volumes. */
@@ -130,7 +130,7 @@ interface LayerRuntime {
 export class SdxMeshTilesService implements OnDestroy {
   private meshLayer: LayerRuntime | null = null;
   private ifcLayer: LayerRuntime | null = null;
-  private vectorLayer: LayerRuntime | null = null;
+  private lineworkLayer: LayerRuntime | null = null;
   private renderer: WebGLRenderer | null = null;
   private scene: Scene | null = null;
   private camera: PerspectiveCamera | null = null;
@@ -161,8 +161,8 @@ export class SdxMeshTilesService implements OnDestroy {
     this.meshLayer = null;
     this.disposeLayer(this.ifcLayer);
     this.ifcLayer = null;
-    this.disposeLayer(this.vectorLayer);
-    this.vectorLayer = null;
+    this.disposeLayer(this.lineworkLayer);
+    this.lineworkLayer = null;
     this.disposeScene();
 
     const width = Math.max(host.clientWidth, 1);
@@ -207,7 +207,7 @@ export class SdxMeshTilesService implements OnDestroy {
       this.renderer.setSize(w, h);
       this.meshLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
       this.ifcLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
-      this.vectorLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
+      this.lineworkLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
     });
     this.resizeObserver.observe(host);
 
@@ -220,7 +220,7 @@ export class SdxMeshTilesService implements OnDestroy {
       this.camera.updateMatrixWorld();
       this.meshLayer?.tiles.update();
       this.ifcLayer?.tiles.update();
-      this.vectorLayer?.tiles.update();
+      this.lineworkLayer?.tiles.update();
       this.renderer.render(this.scene, this.camera);
     };
     tick();
@@ -268,14 +268,14 @@ export class SdxMeshTilesService implements OnDestroy {
     this.scene.add(this.ifcLayer.tiles.group);
   }
 
-  setVectorTileset(tilesetUrl: string | null): void {
-    this.disposeLayer(this.vectorLayer);
-    this.vectorLayer = null;
+  setLineworkTileset(tilesetUrl: string | null): void {
+    this.disposeLayer(this.lineworkLayer);
+    this.lineworkLayer = null;
     if (!tilesetUrl || !this.scene || !this.camera || !this.renderer) {
       return;
     }
-    this.vectorLayer = this.createLayer(tilesetUrl, 'vector');
-    this.scene.add(this.vectorLayer.tiles.group);
+    this.lineworkLayer = this.createLayer(tilesetUrl, 'linework');
+    this.scene.add(this.lineworkLayer.tiles.group);
   }
 
   applyTileBudget(budget: SdxTileBudget): void {
@@ -286,8 +286,8 @@ export class SdxMeshTilesService implements OnDestroy {
     if (this.ifcLayer) {
       this.applyBudgetToTiles(this.ifcLayer.tiles, this.budget);
     }
-    if (this.vectorLayer) {
-      this.applyBudgetToTiles(this.vectorLayer.tiles, this.budget);
+    if (this.lineworkLayer) {
+      this.applyBudgetToTiles(this.lineworkLayer.tiles, this.budget);
     }
   }
 
@@ -349,7 +349,7 @@ export class SdxMeshTilesService implements OnDestroy {
 
   setDisplayBoxBounds(enabled: boolean): void {
     this.displayBoxBounds = enabled;
-    for (const layer of [this.meshLayer, this.ifcLayer, this.vectorLayer]) {
+    for (const layer of [this.meshLayer, this.ifcLayer, this.lineworkLayer]) {
       if (!layer) {
         continue;
       }
@@ -360,7 +360,7 @@ export class SdxMeshTilesService implements OnDestroy {
 
   setDisplayParentBounds(enabled: boolean): void {
     this.displayParentBounds = enabled;
-    for (const layer of [this.meshLayer, this.ifcLayer, this.vectorLayer]) {
+    for (const layer of [this.meshLayer, this.ifcLayer, this.lineworkLayer]) {
       if (!layer) {
         continue;
       }
@@ -370,14 +370,14 @@ export class SdxMeshTilesService implements OnDestroy {
   }
 
   getTilesRenderer(): TilesRenderer | null {
-    return this.meshLayer?.tiles ?? this.ifcLayer?.tiles ?? this.vectorLayer?.tiles ?? null;
+    return this.meshLayer?.tiles ?? this.ifcLayer?.tiles ?? this.lineworkLayer?.tiles ?? null;
   }
 
   getStats(): SdxMeshTilesStats | null {
-    if (!this.meshLayer && !this.ifcLayer && !this.vectorLayer) {
+    if (!this.meshLayer && !this.ifcLayer && !this.lineworkLayer) {
       return null;
     }
-    const layers = [this.meshLayer, this.ifcLayer, this.vectorLayer].filter(
+    const layers = [this.meshLayer, this.ifcLayer, this.lineworkLayer].filter(
       (layer): layer is LayerRuntime => layer !== null,
     );
     const runtimes = layers.map((layer) => this.runtimeStats(layer.tiles));
@@ -408,13 +408,13 @@ export class SdxMeshTilesService implements OnDestroy {
     this.meshLayer = null;
     this.disposeLayer(this.ifcLayer);
     this.ifcLayer = null;
-    this.disposeLayer(this.vectorLayer);
-    this.vectorLayer = null;
+    this.disposeLayer(this.lineworkLayer);
+    this.lineworkLayer = null;
     this.clearProducts();
     this.disposeScene();
   }
 
-  private createLayer(tilesetUrl: string, kind: 'mesh' | 'ifc' | 'vector'): LayerRuntime {
+  private createLayer(tilesetUrl: string, kind: 'mesh' | 'ifc' | 'linework'): LayerRuntime {
     const tiles = new TilesRenderer(kind === 'ifc' ? stripIfcTypesQuery(tilesetUrl) : tilesetUrl);
     tiles.setCamera(this.camera!);
     tiles.setResolutionFromRenderer(this.camera!, this.renderer!);
@@ -438,9 +438,9 @@ export class SdxMeshTilesService implements OnDestroy {
         this.patchLoadedModel(event.scene);
       });
     }
-    if (kind === 'vector') {
+    if (kind === 'linework') {
       tiles.addEventListener('load-model', (event) => {
-        this.patchVectorModel(event.scene);
+        this.patchLineworkModel(event.scene);
       });
     }
 
@@ -469,7 +469,7 @@ export class SdxMeshTilesService implements OnDestroy {
     }
     const combined = new Sphere();
     let hasSphere = false;
-    for (const layer of [this.meshLayer, this.ifcLayer, this.vectorLayer]) {
+    for (const layer of [this.meshLayer, this.ifcLayer, this.lineworkLayer]) {
       if (!layer) {
         continue;
       }
@@ -622,7 +622,7 @@ export class SdxMeshTilesService implements OnDestroy {
     this.highlightedComponentId = null;
   }
 
-  private patchVectorModel(scene: Object3D): void {
+  private patchLineworkModel(scene: Object3D): void {
     scene.traverse((object) => {
       if (!(object instanceof Line) && !(object instanceof LineSegments) && !(object instanceof Mesh)) {
         return;

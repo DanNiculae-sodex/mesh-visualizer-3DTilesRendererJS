@@ -7,5 +7,5 @@ export {
   type SdxMeshTilesStats,
   type SdxTileBudget,
   type IfcProduct,
-  type VectorLayer,
+  type LineworkLayer,
 } from './lib/sdx-mesh-tiles.service';
