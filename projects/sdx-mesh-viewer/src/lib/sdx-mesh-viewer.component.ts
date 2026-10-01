@@ -51,6 +51,12 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
   @Input() ifcId = '';
   @Input() lineworkTilesetUrl = '';
   @Input() lineworkId = '';
+  /** Full CS25D metadata.json URL, or leave empty and set cs25dId + apiBaseUrl. */
+  @Input() cs25dMetadataUrl = '';
+  @Input() cs25dId = '';
+  /** Full CS3D metadata.json URL, or leave empty and set cs3dId + apiBaseUrl. */
+  @Input() cs3dMetadataUrl = '';
+  @Input() cs3dId = '';
   @Input() apiBaseUrl = 'http://localhost:2546/service3d/v1';
   @Input() accessToken = '';
 
@@ -99,6 +105,10 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
       changes['ifcId'] ||
       changes['lineworkTilesetUrl'] ||
       changes['lineworkId'] ||
+      changes['cs25dMetadataUrl'] ||
+      changes['cs25dId'] ||
+      changes['cs3dMetadataUrl'] ||
+      changes['cs3dId'] ||
       changes['apiBaseUrl'] ||
       changes['accessToken']
     ) {
@@ -163,6 +173,9 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     const meshUrl = this.resolveMeshTilesetUrl();
     this.tilesService.setMeshTileset(meshUrl || null);
 
+    const cs25dPromise = this.tilesService.setPotreeLayer('cs25d', this.resolveCs25dMetadataUrl() || null);
+    const cs3dPromise = this.tilesService.setPotreeLayer('cs3d', this.resolveCs3dMetadataUrl() || null);
+
     const ifcUrl = this.resolveIfcTilesetUrl();
     const products = ifcUrl ? await this.loadProducts() : [];
     if (generation !== this.reloadGeneration) {
@@ -178,6 +191,16 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     }
     this.tilesService.setLineworkTileset(lineworkUrl || null);
     this.lineworkLayersLoaded.emit(lineworkLayers);
+
+    const pointErrors = (await Promise.all([cs25dPromise, cs3dPromise])).filter(
+      (message): message is string => !!message,
+    );
+    if (generation !== this.reloadGeneration) {
+      return;
+    }
+    if (pointErrors.length > 0) {
+      throw new Error(pointErrors.join('; '));
+    }
   }
 
   private budgetFromInputs() {
@@ -190,6 +213,30 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
       maxDownloadJobs: Number(this.maxDownloadJobs),
       maxParseJobs: Number(this.maxParseJobs),
     };
+  }
+
+  private resolveCs25dMetadataUrl(): string {
+    if (this.cs25dMetadataUrl.trim()) {
+      return this.cs25dMetadataUrl.trim();
+    }
+    if (!this.cs25dId.trim()) {
+      return '';
+    }
+    const base = this.apiBaseUrl.replace(/\/$/, '');
+    const id = encodeURIComponent(this.cs25dId.trim());
+    return `${base}/cube/simple/${id}/metadata.json`;
+  }
+
+  private resolveCs3dMetadataUrl(): string {
+    if (this.cs3dMetadataUrl.trim()) {
+      return this.cs3dMetadataUrl.trim();
+    }
+    if (!this.cs3dId.trim()) {
+      return '';
+    }
+    const base = this.apiBaseUrl.replace(/\/$/, '');
+    const id = encodeURIComponent(this.cs3dId.trim());
+    return `${base}/cube-3d/simple/${id}/metadata.json`;
   }
 
   private resolveMeshTilesetUrl(): string {

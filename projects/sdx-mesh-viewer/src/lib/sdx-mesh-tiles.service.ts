@@ -21,6 +21,11 @@ import {
 import { TilesRenderer } from '3d-tiles-renderer';
 import { DebugTilesPlugin, GLTFExtensionsPlugin } from '3d-tiles-renderer/plugins';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { PotreeCloudStats, SdxPotreeCloud } from './sdx-potree-cloud';
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
 
 /** Origin-relative ENH: X east, Y north, Z height. Same frame as cube/Potree. */
 const WORLD_UP = new Vector3(0, 0, 1);
@@ -109,6 +114,8 @@ export interface SdxMeshTilesStats {
   cacheMaxTiles: number;
   productsVisible: number;
   productsTotal: number;
+  pointsVisible: number;
+  pointsCached: number;
 }
 
 const DEFAULT_BUDGET: Required<SdxTileBudget> = {
@@ -131,6 +138,15 @@ export class SdxMeshTilesService implements OnDestroy {
   private meshLayer: LayerRuntime | null = null;
   private ifcLayer: LayerRuntime | null = null;
   private lineworkLayer: LayerRuntime | null = null;
+  private readonly potreeLayers: Record<'cs25d' | 'cs3d', SdxPotreeCloud | null> = {
+    cs25d: null,
+    cs3d: null,
+  };
+  private readonly potreeGeneration: Record<'cs25d' | 'cs3d', number> = { cs25d: 0, cs3d: 0 };
+  private readonly potreeLoading: Record<'cs25d' | 'cs3d', SdxPotreeCloud | null> = {
+    cs25d: null,
+    cs3d: null,
+  };
   private renderer: WebGLRenderer | null = null;
   private scene: Scene | null = null;
   private camera: PerspectiveCamera | null = null;
@@ -163,6 +179,8 @@ export class SdxMeshTilesService implements OnDestroy {
     this.ifcLayer = null;
     this.disposeLayer(this.lineworkLayer);
     this.lineworkLayer = null;
+    this.disposePotreeLayer('cs25d');
+    this.disposePotreeLayer('cs3d');
     this.disposeScene();
 
     const width = Math.max(host.clientWidth, 1);
@@ -183,7 +201,10 @@ export class SdxMeshTilesService implements OnDestroy {
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.screenSpacePanning = false;
+    // Zoom moves the pivot with the cursor. A fixed pivot on the cube mid-plane
+    // stops dolly before the camera reaches points that sit off that plane.
+    controls.zoomToCursor = true;
+    controls.screenSpacePanning = true;
 
     scene.add(new AmbientLight(0xffffff, 0.7));
     const sun = new DirectionalLight(0xffffff, 0.9);
@@ -217,10 +238,13 @@ export class SdxMeshTilesService implements OnDestroy {
         return;
       }
       this.controls.update();
+      this.updateCameraClipping();
       this.camera.updateMatrixWorld();
       this.meshLayer?.tiles.update();
       this.ifcLayer?.tiles.update();
       this.lineworkLayer?.tiles.update();
+      this.potreeLayers.cs25d?.update(this.camera, this.renderer, this.budget);
+      this.potreeLayers.cs3d?.update(this.camera, this.renderer, this.budget);
       this.renderer.render(this.scene, this.camera);
     };
     tick();
@@ -266,6 +290,41 @@ export class SdxMeshTilesService implements OnDestroy {
     }
     this.ifcLayer = this.createLayer(tilesetUrl, 'ifc');
     this.scene.add(this.ifcLayer.tiles.group);
+  }
+
+  async setPotreeLayer(kind: 'cs25d' | 'cs3d', metadataUrl: string | null): Promise<string | null> {
+    const generation = ++this.potreeGeneration[kind];
+    this.disposePotreeLayer(kind);
+    if (!metadataUrl || !this.scene) {
+      return null;
+    }
+    const cloud = new SdxPotreeCloud(metadataUrl, this.accessToken);
+    this.potreeLoading[kind] = cloud;
+    try {
+      await cloud.load();
+    } catch (error: unknown) {
+      cloud.dispose();
+      if (this.potreeLoading[kind] === cloud) {
+        this.potreeLoading[kind] = null;
+      }
+      if (generation !== this.potreeGeneration[kind] || !this.scene || isAbortError(error)) {
+        return null;
+      }
+      const label = kind === 'cs25d' ? 'CS25D' : 'CS3D';
+      const message = error instanceof Error ? error.message : String(error);
+      return `${label}: ${message}`;
+    }
+    if (this.potreeLoading[kind] === cloud) {
+      this.potreeLoading[kind] = null;
+    }
+    if (generation !== this.potreeGeneration[kind] || !this.scene) {
+      cloud.dispose();
+      return null;
+    }
+    this.scene.add(cloud.group);
+    this.potreeLayers[kind] = cloud;
+    this.frameToLoadedLayers();
+    return null;
   }
 
   setLineworkTileset(tilesetUrl: string | null): void {
@@ -374,28 +433,32 @@ export class SdxMeshTilesService implements OnDestroy {
   }
 
   getStats(): SdxMeshTilesStats | null {
-    if (!this.meshLayer && !this.ifcLayer && !this.lineworkLayer) {
-      return null;
-    }
     const layers = [this.meshLayer, this.ifcLayer, this.lineworkLayer].filter(
       (layer): layer is LayerRuntime => layer !== null,
     );
+    const pointStats = this.collectPointStats();
+    if (layers.length === 0 && !this.potreeLayers.cs25d && !this.potreeLayers.cs3d) {
+      return null;
+    }
     const runtimes = layers.map((layer) => this.runtimeStats(layer.tiles));
-    const primary = layers[0].tiles;
+    const primary = layers[0]?.tiles;
     return {
-      errorTarget: primary.errorTarget,
-      maxDepth: primary.maxDepth,
-      downloading: runtimes.reduce((sum, stats) => sum + stats.downloading, 0),
+      errorTarget: primary?.errorTarget ?? this.budget.errorTarget,
+      maxDepth: primary?.maxDepth ?? this.budget.maxDepth,
+      downloading:
+        runtimes.reduce((sum, stats) => sum + stats.downloading, 0) + pointStats.downloading,
       parsing: runtimes.reduce((sum, stats) => sum + stats.parsing, 0),
       visible: runtimes.reduce((sum, stats) => sum + stats.visible, 0),
       cached: runtimes.reduce((sum, stats) => sum + stats.cached, 0),
-      cacheMaxTiles: primary.lruCache.maxSize,
+      cacheMaxTiles: primary?.lruCache.maxSize ?? this.budget.cacheMaxTiles,
       productsVisible: this.products.reduce(
         (count, product) =>
           count + (this.visibilityData[product.component_id] > 0 ? 1 : 0),
         0,
       ),
       productsTotal: this.products.length,
+      pointsVisible: pointStats.visiblePoints,
+      pointsCached: pointStats.loadedNodes,
     };
   }
 
@@ -410,8 +473,31 @@ export class SdxMeshTilesService implements OnDestroy {
     this.ifcLayer = null;
     this.disposeLayer(this.lineworkLayer);
     this.lineworkLayer = null;
+    this.disposePotreeLayer('cs25d');
+    this.disposePotreeLayer('cs3d');
     this.clearProducts();
     this.disposeScene();
+  }
+
+  private disposePotreeLayer(kind: 'cs25d' | 'cs3d'): void {
+    this.potreeLoading[kind]?.dispose();
+    this.potreeLoading[kind] = null;
+    this.potreeLayers[kind]?.dispose();
+    this.potreeLayers[kind] = null;
+  }
+
+  private collectPointStats(): PotreeCloudStats {
+    const empty: PotreeCloudStats = { visiblePoints: 0, loadedNodes: 0, downloading: 0 };
+    for (const cloud of [this.potreeLayers.cs25d, this.potreeLayers.cs3d]) {
+      if (!cloud) {
+        continue;
+      }
+      const stats = cloud.getLastStats();
+      empty.visiblePoints += stats.visiblePoints;
+      empty.loadedNodes += stats.loadedNodes;
+      empty.downloading += stats.downloading;
+    }
+    return empty;
   }
 
   private createLayer(tilesetUrl: string, kind: 'mesh' | 'ifc' | 'linework'): LayerRuntime {
@@ -484,6 +570,18 @@ export class SdxMeshTilesService implements OnDestroy {
         combined.union(sphere);
       }
     }
+    for (const cloud of [this.potreeLayers.cs25d, this.potreeLayers.cs3d]) {
+      const sphere = cloud?.getBoundingSphere();
+      if (!sphere) {
+        continue;
+      }
+      if (!hasSphere) {
+        combined.copy(sphere);
+        hasSphere = true;
+      } else {
+        combined.union(sphere);
+      }
+    }
     if (!hasSphere) {
       return;
     }
@@ -496,6 +594,21 @@ export class SdxMeshTilesService implements OnDestroy {
       combined.center.z + r * 0.6,
     );
     this.controls.update();
+  }
+
+  private updateCameraClipping(): void {
+    if (!this.camera || !this.controls) {
+      return;
+    }
+    const distance = Math.max(this.camera.position.distanceTo(this.controls.target), 0.05);
+    const near = Math.max(0.01, distance / 200);
+    const far = Math.max(distance * 500, 1000);
+    if (Math.abs(this.camera.near - near) < near * 0.05 && Math.abs(this.camera.far - far) < far * 0.05) {
+      return;
+    }
+    this.camera.near = near;
+    this.camera.far = far;
+    this.camera.updateProjectionMatrix();
   }
 
   private disposeLayer(layer: LayerRuntime | null): void {

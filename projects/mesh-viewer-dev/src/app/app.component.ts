@@ -84,6 +84,8 @@ export class AppComponent implements OnDestroy {
 
   apiBaseUrl = environment.apiBaseUrl;
   projectId = environment.defaultProjectId;
+  cs25dId = environment.defaultCs25dId;
+  cs3dId = environment.defaultCs3dId;
   meshId = environment.defaultMeshId;
   ifcId = environment.defaultIfcId;
   lineworkId = environment.defaultLineworkId;
@@ -102,7 +104,7 @@ export class AppComponent implements OnDestroy {
   catalog: CatalogCategory[] = [];
   products: CatalogProduct[] = [];
   productSearch = '';
-  catalogError = '';
+  viewerError = '';
   lineworkLayers: LineworkLayerRow[] = [];
   lineworkError = '';
 
@@ -160,11 +162,11 @@ export class AppComponent implements OnDestroy {
   }
 
   async apply(): Promise<void> {
-    this.catalogError = '';
+    this.viewerError = '';
     try {
       await this.viewer?.reload();
     } catch (error) {
-      this.catalogError = error instanceof Error ? error.message : String(error);
+      this.viewerError = error instanceof Error ? error.message : String(error);
     }
   }
 

@@ -2,9 +2,13 @@
   <aside class="panel">
     <h1>SDX Mesh Viewer</h1>
     <p class="hint">
-      Dev-only shell for LOD mesh, typed IFC, and DXF linework streaming against Service 3D.
-      All layers share one Z-up ENH viewport (X east, Y north, Z height).
+      Dev-only shell for Service 3D: CS25D and CS3D Potree clouds, LOD mesh, typed IFC, and DXF linework.
+      All layers share one Z-up ENH viewport (X east, Y north, Z height). Leave an id empty to skip that layer.
     </p>
+
+    @if (viewerError) {
+      <p class="hint">{{ viewerError }}</p>
+    }
 
     <label>
       API base
@@ -14,6 +18,16 @@
     <label>
       Project id
       <input [(ngModel)]="projectId" name="projectId" />
+    </label>
+
+    <label>
+      CS25D id
+      <input [(ngModel)]="cs25dId" name="cs25dId" />
+    </label>
+
+    <label>
+      CS3D id
+      <input [(ngModel)]="cs3dId" name="cs3dId" />
     </label>
 
     <label>
@@ -63,10 +77,7 @@
     }
 
     <h2>IFC navigation</h2>
-    @if (catalogError) {
-      <p class="hint">{{ catalogError }}</p>
-    }
-    @if (catalog.length === 0 && !catalogError) {
+    @if (catalog.length === 0) {
       <p class="hint">Load an IFC id to browse its elements.</p>
     }
     <div class="navigation-actions">
@@ -212,14 +223,16 @@
         <div>Downloading: {{ stats.downloading }}</div>
         <div>Parsing: {{ stats.parsing }}</div>
         <div>Products: {{ stats.productsVisible }} / {{ stats.productsTotal }}</div>
+        <div>Points: {{ stats.pointsVisible }} ({{ stats.pointsCached }} nodes)</div>
       </div>
     }
 
     <p class="footer">
       Expects
-      <code>{{ apiBaseUrl }}/mesh/simple/{{ projectId }}/{{ meshId }}/tileset.json</code>
-      and
-      <code>{{ apiBaseUrl }}/ifc/simple/{{ projectId }}/{{ ifcId }}/tileset.json</code>
+      <code>{{ apiBaseUrl }}/cube/simple/{{ cs25dId }}/metadata.json</code>,
+      <code>{{ apiBaseUrl }}/cube-3d/simple/{{ cs3dId }}/metadata.json</code>,
+      <code>{{ apiBaseUrl }}/mesh/simple/{{ projectId }}/{{ meshId }}/tileset.json</code>,
+      <code>{{ apiBaseUrl }}/ifc/simple/{{ projectId }}/{{ ifcId }}/tileset.json</code>,
       and
       <code>{{ apiBaseUrl }}/linework/simple/{{ projectId }}/{{ lineworkId }}/tileset.json</code>
     </p>
@@ -228,6 +241,8 @@
   <main class="viewport">
     <sdx-mesh-viewer
       [projectId]="projectId"
+      [cs25dId]="cs25dId"
+      [cs3dId]="cs3dId"
       [meshId]="meshId"
       [ifcId]="ifcId"
       [lineworkId]="lineworkId"
@@ -244,7 +259,7 @@
       [displayParentBounds]="displayParentBounds"
       (productsLoaded)="onProductsLoaded($event)"
       (lineworkLayersLoaded)="onLineworkLayersLoaded($event)"
-      (loadError)="catalogError = $event"
+      (loadError)="viewerError = $event"
     />
   </main>
 </div>
