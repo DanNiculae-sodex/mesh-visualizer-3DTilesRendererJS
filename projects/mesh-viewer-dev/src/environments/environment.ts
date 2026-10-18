@@ -7,4 +7,5 @@ export const environment = {
   defaultMeshId: 'demo',
   defaultIfcId: '',
   defaultLineworkId: '',
+  defaultOrthophotoId: '',
 };

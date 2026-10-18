@@ -89,6 +89,7 @@ export class AppComponent implements OnDestroy {
   meshId = environment.defaultMeshId;
   ifcId = environment.defaultIfcId;
   lineworkId = environment.defaultLineworkId;
+  orthophotoId = environment.defaultOrthophotoId;
   accessToken = '';
 
   errorTarget = 6;

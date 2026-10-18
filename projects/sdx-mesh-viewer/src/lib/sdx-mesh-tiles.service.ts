@@ -21,6 +21,7 @@ import {
 import { TilesRenderer } from '3d-tiles-renderer';
 import { DebugTilesPlugin, GLTFExtensionsPlugin } from '3d-tiles-renderer/plugins';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { SdxOrthophotoLayer } from './sdx-orthophoto-layer';
 import { PotreeCloudStats, SdxPotreeCloud } from './sdx-potree-cloud';
 
 function isAbortError(error: unknown): boolean {
@@ -147,6 +148,9 @@ export class SdxMeshTilesService implements OnDestroy {
     cs25d: null,
     cs3d: null,
   };
+  private orthophotoLayer: SdxOrthophotoLayer | null = null;
+  private orthophotoLoading: SdxOrthophotoLayer | null = null;
+  private orthophotoGeneration = 0;
   private renderer: WebGLRenderer | null = null;
   private scene: Scene | null = null;
   private camera: PerspectiveCamera | null = null;
@@ -181,6 +185,7 @@ export class SdxMeshTilesService implements OnDestroy {
     this.lineworkLayer = null;
     this.disposePotreeLayer('cs25d');
     this.disposePotreeLayer('cs3d');
+    this.disposeOrthophotoLayer();
     this.disposeScene();
 
     const width = Math.max(host.clientWidth, 1);
@@ -323,6 +328,40 @@ export class SdxMeshTilesService implements OnDestroy {
     }
     this.scene.add(cloud.group);
     this.potreeLayers[kind] = cloud;
+    this.frameToLoadedLayers();
+    return null;
+  }
+
+  async setOrthophotoLayer(tiffUrl: string | null): Promise<string | null> {
+    const generation = ++this.orthophotoGeneration;
+    this.disposeOrthophotoLayer();
+    if (!tiffUrl || !this.scene || !this.renderer) {
+      return null;
+    }
+    const layer = new SdxOrthophotoLayer(tiffUrl, this.accessToken);
+    this.orthophotoLoading = layer;
+    try {
+      await layer.load(this.renderer);
+    } catch (error: unknown) {
+      layer.dispose();
+      if (this.orthophotoLoading === layer) {
+        this.orthophotoLoading = null;
+      }
+      if (generation !== this.orthophotoGeneration || !this.scene || isAbortError(error)) {
+        return null;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return `Orthophoto: ${message}`;
+    }
+    if (this.orthophotoLoading === layer) {
+      this.orthophotoLoading = null;
+    }
+    if (generation !== this.orthophotoGeneration || !this.scene) {
+      layer.dispose();
+      return null;
+    }
+    this.scene.add(layer.group);
+    this.orthophotoLayer = layer;
     this.frameToLoadedLayers();
     return null;
   }
@@ -475,6 +514,7 @@ export class SdxMeshTilesService implements OnDestroy {
     this.lineworkLayer = null;
     this.disposePotreeLayer('cs25d');
     this.disposePotreeLayer('cs3d');
+    this.disposeOrthophotoLayer();
     this.clearProducts();
     this.disposeScene();
   }
@@ -484,6 +524,13 @@ export class SdxMeshTilesService implements OnDestroy {
     this.potreeLoading[kind] = null;
     this.potreeLayers[kind]?.dispose();
     this.potreeLayers[kind] = null;
+  }
+
+  private disposeOrthophotoLayer(): void {
+    this.orthophotoLoading?.dispose();
+    this.orthophotoLoading = null;
+    this.orthophotoLayer?.dispose();
+    this.orthophotoLayer = null;
   }
 
   private collectPointStats(): PotreeCloudStats {
@@ -570,8 +617,8 @@ export class SdxMeshTilesService implements OnDestroy {
         combined.union(sphere);
       }
     }
-    for (const cloud of [this.potreeLayers.cs25d, this.potreeLayers.cs3d]) {
-      const sphere = cloud?.getBoundingSphere();
+    for (const layer of [this.potreeLayers.cs25d, this.potreeLayers.cs3d, this.orthophotoLayer]) {
+      const sphere = layer?.getBoundingSphere();
       if (!sphere) {
         continue;
       }

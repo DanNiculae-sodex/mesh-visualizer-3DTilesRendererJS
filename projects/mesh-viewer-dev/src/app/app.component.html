@@ -2,7 +2,7 @@
   <aside class="panel">
     <h1>SDX Mesh Viewer</h1>
     <p class="hint">
-      Dev-only shell for Service 3D: CS25D and CS3D Potree clouds, LOD mesh, typed IFC, and DXF linework.
+      Dev-only shell for Service 3D: CS25D and CS3D Potree clouds, LOD mesh, typed IFC, DXF linework, and orthophoto.
       All layers share one Z-up ENH viewport (X east, Y north, Z height). Leave an id empty to skip that layer.
     </p>
 
@@ -43,6 +43,11 @@
     <label>
       Linework id
       <input [(ngModel)]="lineworkId" name="lineworkId" />
+    </label>
+
+    <label>
+      Orthophoto id
+      <input [(ngModel)]="orthophotoId" name="orthophotoId" />
     </label>
 
     <label>
@@ -231,10 +236,11 @@
       Expects
       <code>{{ apiBaseUrl }}/cube/simple/{{ cs25dId }}/metadata.json</code>,
       <code>{{ apiBaseUrl }}/cube-3d/simple/{{ cs3dId }}/metadata.json</code>,
-      <code>{{ apiBaseUrl }}/mesh/simple/{{ projectId }}/{{ meshId }}/tileset.json</code>,
-      <code>{{ apiBaseUrl }}/ifc/simple/{{ projectId }}/{{ ifcId }}/tileset.json</code>,
+      <code>{{ apiBaseUrl }}/mesh/simple/{{ meshId }}/tileset.json</code>,
+      <code>{{ apiBaseUrl }}/ifc/simple/{{ ifcId }}/tileset.json</code>,
+      <code>{{ apiBaseUrl }}/linework/simple/{{ lineworkId }}/tileset.json</code>,
       and
-      <code>{{ apiBaseUrl }}/linework/simple/{{ projectId }}/{{ lineworkId }}/tileset.json</code>
+      <code>{{ apiBaseUrl }}/orthophoto/simple/{{ orthophotoId }}</code>
     </p>
   </aside>
 
@@ -246,6 +252,7 @@
       [meshId]="meshId"
       [ifcId]="ifcId"
       [lineworkId]="lineworkId"
+      [orthophotoId]="orthophotoId"
       [apiBaseUrl]="apiBaseUrl"
       [accessToken]="accessToken"
       [errorTarget]="errorTarget"

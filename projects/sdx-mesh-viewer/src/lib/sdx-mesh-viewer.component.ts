@@ -41,12 +41,12 @@ import {
 export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestroy {
   @ViewChild('host', { static: true }) hostRef!: ElementRef<HTMLDivElement>;
 
-  /** Full mesh tileset.json URL, or leave empty and set projectId + meshId + apiBaseUrl. */
+  /** Full mesh tileset.json URL, or leave empty and set meshId + apiBaseUrl. */
   @Input() tilesetUrl = '';
   /** Temporary until Nest resolves the project from the document, matching CS25D. */
   @Input() projectId = '';
   @Input() meshId = '';
-  /** Full IFC tileset.json URL, or leave empty and set projectId + ifcId + apiBaseUrl. */
+  /** Full IFC tileset.json URL, or leave empty and set ifcId + apiBaseUrl. */
   @Input() ifcTilesetUrl = '';
   @Input() ifcId = '';
   @Input() lineworkTilesetUrl = '';
@@ -57,6 +57,9 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
   /** Full CS3D metadata.json URL, or leave empty and set cs3dId + apiBaseUrl. */
   @Input() cs3dMetadataUrl = '';
   @Input() cs3dId = '';
+  /** Full orthophoto COG URL, or leave empty and set orthophotoId + apiBaseUrl. */
+  @Input() orthophotoUrl = '';
+  @Input() orthophotoId = '';
   @Input() apiBaseUrl = 'http://localhost:2546/service3d/v1';
   @Input() accessToken = '';
 
@@ -109,6 +112,8 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
       changes['cs25dId'] ||
       changes['cs3dMetadataUrl'] ||
       changes['cs3dId'] ||
+      changes['orthophotoUrl'] ||
+      changes['orthophotoId'] ||
       changes['apiBaseUrl'] ||
       changes['accessToken']
     ) {
@@ -175,6 +180,7 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
 
     const cs25dPromise = this.tilesService.setPotreeLayer('cs25d', this.resolveCs25dMetadataUrl() || null);
     const cs3dPromise = this.tilesService.setPotreeLayer('cs3d', this.resolveCs3dMetadataUrl() || null);
+    const orthophotoPromise = this.tilesService.setOrthophotoLayer(this.resolveOrthophotoUrl() || null);
 
     const ifcUrl = this.resolveIfcTilesetUrl();
     const products = ifcUrl ? await this.loadProducts() : [];
@@ -192,14 +198,14 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     this.tilesService.setLineworkTileset(lineworkUrl || null);
     this.lineworkLayersLoaded.emit(lineworkLayers);
 
-    const pointErrors = (await Promise.all([cs25dPromise, cs3dPromise])).filter(
+    const layerErrors = (await Promise.all([cs25dPromise, cs3dPromise, orthophotoPromise])).filter(
       (message): message is string => !!message,
     );
     if (generation !== this.reloadGeneration) {
       return;
     }
-    if (pointErrors.length > 0) {
-      throw new Error(pointErrors.join('; '));
+    if (layerErrors.length > 0) {
+      throw new Error(layerErrors.join('; '));
     }
   }
 
@@ -239,43 +245,52 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     return `${base}/cube-3d/simple/${id}/metadata.json`;
   }
 
+  private resolveOrthophotoUrl(): string {
+    if (this.orthophotoUrl.trim()) {
+      return this.orthophotoUrl.trim();
+    }
+    if (!this.orthophotoId.trim()) {
+      return '';
+    }
+    const base = this.apiBaseUrl.replace(/\/$/, '');
+    const id = encodeURIComponent(this.orthophotoId.trim());
+    return `${base}/orthophoto/simple/${id}`;
+  }
+
   private resolveMeshTilesetUrl(): string {
     if (this.tilesetUrl.trim()) {
       return this.tilesetUrl.trim();
     }
-    if (!this.projectId.trim() || !this.meshId.trim()) {
+    if (!this.meshId.trim()) {
       return '';
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
-    const projectId = encodeURIComponent(this.projectId.trim());
     const meshId = encodeURIComponent(this.meshId.trim());
-    return `${base}/mesh/simple/${projectId}/${meshId}/tileset.json`;
+    return `${base}/mesh/simple/${meshId}/tileset.json`;
   }
 
   private resolveIfcTilesetUrl(): string {
     if (this.ifcTilesetUrl.trim()) {
       return this.ifcTilesetUrl.trim();
     }
-    if (!this.projectId.trim() || !this.ifcId.trim()) {
+    if (!this.ifcId.trim()) {
       return '';
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
-    const projectId = encodeURIComponent(this.projectId.trim());
     const ifcId = encodeURIComponent(this.ifcId.trim());
-    return `${base}/ifc/simple/${projectId}/${ifcId}/tileset.json`;
+    return `${base}/ifc/simple/${ifcId}/tileset.json`;
   }
 
   private resolveLineworkTilesetUrl(layerNames?: string[]): string {
     if (this.lineworkTilesetUrl.trim()) {
       return this.lineworkTilesetUrl.trim();
     }
-    if (!this.projectId.trim() || !this.lineworkId.trim()) {
+    if (!this.lineworkId.trim()) {
       return '';
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
-    const projectId = encodeURIComponent(this.projectId.trim());
     const id = encodeURIComponent(this.lineworkId.trim());
-    const url = `${base}/linework/simple/${projectId}/${id}/tileset.json`;
+    const url = `${base}/linework/simple/${id}/tileset.json`;
     if (layerNames === undefined) {
       return url;
     }
@@ -298,17 +313,16 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
   }
 
   private async loadLineworkLayers(): Promise<LineworkLayer[]> {
-    if (!this.projectId.trim() || !this.lineworkId.trim()) {
+    if (!this.lineworkId.trim()) {
       return [];
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
-    const projectId = encodeURIComponent(this.projectId.trim());
     const id = encodeURIComponent(this.lineworkId.trim());
     const headers: Record<string, string> = {};
     if (this.accessToken.trim()) {
       headers['Authorization'] = `Bearer ${this.accessToken.trim()}`;
     }
-    const response = await fetch(`${base}/linework/simple/${projectId}/${id}/manifest`, { headers });
+    const response = await fetch(`${base}/linework/simple/${id}/manifest`, { headers });
     if (!response.ok) {
       throw new Error(`Linework manifest HTTP ${response.status}`);
     }
@@ -320,17 +334,16 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     if (!this.ifcId.trim() && !this.ifcTilesetUrl.trim()) {
       return [];
     }
-    if (!this.projectId.trim() || !this.ifcId.trim()) {
+    if (!this.ifcId.trim()) {
       return [];
     }
     const base = this.apiBaseUrl.replace(/\/$/, '');
-    const projectId = encodeURIComponent(this.projectId.trim());
     const id = encodeURIComponent(this.ifcId.trim());
     const headers: Record<string, string> = {};
     if (this.accessToken.trim()) {
       headers['Authorization'] = `Bearer ${this.accessToken.trim()}`;
     }
-    const response = await fetch(`${base}/ifc/simple/${projectId}/${id}/manifest`, { headers });
+    const response = await fetch(`${base}/ifc/simple/${id}/manifest`, { headers });
     if (!response.ok) {
       throw new Error(`IFC manifest HTTP ${response.status}`);
     }
