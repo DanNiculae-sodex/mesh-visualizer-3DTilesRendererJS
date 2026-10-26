@@ -55,6 +55,14 @@
       <input [(ngModel)]="accessToken" name="accessToken" type="password" autocomplete="off" />
     </label>
 
+    <label>
+      Camera
+      <select [(ngModel)]="cameraMode" name="cameraMode">
+        <option value="perspective">Perspective</option>
+        <option value="orthographic">Orthographic</option>
+      </select>
+    </label>
+
     <h2>Linework layers</h2>
     @if (lineworkError) {
       <p class="hint">{{ lineworkError }}</p>
@@ -207,6 +215,45 @@
       <input [(ngModel)]="maxParseJobs" name="maxParseJobs" type="number" min="1" step="1" />
     </label>
 
+    <h2>Point clouds</h2>
+    <p class="hint">
+      Point size is in screen pixels. 0 sizes each node from its spacing.
+      Chunk wireframes outline the finest CS25D (blue) and CS3D (orange) cells.
+    </p>
+
+    <label>
+      CS25D point size
+      <input
+        [ngModel]="cs25dPointSize"
+        name="cs25dPointSize"
+        type="range"
+        min="0"
+        max="32"
+        step="0.5"
+        (ngModelChange)="onPointSizeChange('cs25d', $event)"
+      />
+      <span class="range-value">{{ pointSizeLabel(cs25dPointSize) }}</span>
+    </label>
+
+    <label>
+      CS3D point size
+      <input
+        [ngModel]="cs3dPointSize"
+        name="cs3dPointSize"
+        type="range"
+        min="0"
+        max="32"
+        step="0.5"
+        (ngModelChange)="onPointSizeChange('cs3d', $event)"
+      />
+      <span class="range-value">{{ pointSizeLabel(cs3dPointSize) }}</span>
+    </label>
+
+    <label class="checkbox">
+      <input [(ngModel)]="displayChunks" name="displayChunks" type="checkbox" />
+      Show chunks
+    </label>
+
     <h2>Debug</h2>
 
     <label class="checkbox">
@@ -229,6 +276,7 @@
         <div>Parsing: {{ stats.parsing }}</div>
         <div>Products: {{ stats.productsVisible }} / {{ stats.productsTotal }}</div>
         <div>Points: {{ stats.pointsVisible }} ({{ stats.pointsCached }} nodes)</div>
+        <div>Chunks: {{ stats.chunks }}</div>
       </div>
     }
 
@@ -264,6 +312,10 @@
       [maxParseJobs]="maxParseJobs"
       [displayBoxBounds]="displayBoxBounds"
       [displayParentBounds]="displayParentBounds"
+      [displayChunks]="displayChunks"
+      [cs25dPointSize]="cs25dPointSize"
+      [cs3dPointSize]="cs3dPointSize"
+      [cameraMode]="cameraMode"
       (productsLoaded)="onProductsLoaded($event)"
       (lineworkLayersLoaded)="onLineworkLayersLoaded($event)"
       (loadError)="viewerError = $event"

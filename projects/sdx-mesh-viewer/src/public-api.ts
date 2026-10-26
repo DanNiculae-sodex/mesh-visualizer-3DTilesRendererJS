@@ -6,6 +6,7 @@ export {
   type SdxMeshTilesOptions,
   type SdxMeshTilesStats,
   type SdxTileBudget,
+  type SdxCameraMode,
   type IfcProduct,
   type LineworkLayer,
 } from './lib/sdx-mesh-tiles.service';

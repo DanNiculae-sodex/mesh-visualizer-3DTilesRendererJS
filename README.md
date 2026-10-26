@@ -44,6 +44,9 @@ import { SdxMeshViewerComponent } from 'sdx-mesh-viewer';
       apiBaseUrl="https://your-host/service3d/v1"
       [accessToken]="token"
       [displayBoxBounds]="true"
+      [displayChunks]="true"
+      [cs25dPointSize]="2"
+      [cs3dPointSize]="2"
       (productsLoaded)="onIfcProducts($event)"
       (lineworkLayersLoaded)="onLineworkLayers($event)"
     />
@@ -70,7 +73,11 @@ IFC product visibility and hover highlight update a GPU texture and do not refet
 
 The viewer treats every layer as **origin-relative ENH, Z-up** (X east, Y north, Z height). Mesh vertices and Potree positions are already in that frame; the client does not remap axes or add `mesh.json.origin`. Potree `metadata.offset` is the octree quantization origin, not a scene translation. Camera and orbit use `+Z` as up. The camera frames the union of loaded CS25D, CS3D, mesh, IFC, linework, and orthophoto bounds.
 
+`cameraMode` is `perspective` (default) or `orthographic`. Switching keeps the orbit target and matches the visible height. The dev shell exposes this as the Camera select.
+
 CS25D and CS3D use Potree 2 `DEFAULT` packing (int32 position, uint16 rgb). The same error target and cache limits drive point-cloud refinement: higher `errorTarget` keeps coarser nodes. RGB is the default color mode from `octree.bin`.
+
+`cs25dPointSize` and `cs3dPointSize` are screen-pixel sizes. `0` sizes each node from its spacing. `displayChunks` draws the finest chunk-backed octree cells (CS25D blue, CS3D orange). The dev shell exposes both next to the tile-budget controls.
 
 **Tile budget inputs** (live-updatable, shared by all layers): `errorTarget`, `maxDepth`, `cacheMaxTiles`, `cacheMinTiles`, `cacheMaxMb`, `maxDownloadJobs`, `maxParseJobs`. Higher `errorTarget` and lower cache limits load fewer tiles.
 

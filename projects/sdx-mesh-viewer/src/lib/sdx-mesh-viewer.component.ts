@@ -82,6 +82,14 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
   @Input() displayBoxBounds = false;
   /** Also draw ancestor tile bounds. */
   @Input() displayParentBounds = false;
+  /** Wireframe the finest CS25D and CS3D chunks. */
+  @Input() displayChunks = false;
+  /** CS25D screen-pixel point size. 0 sizes each node from its spacing. */
+  @Input() cs25dPointSize = 0;
+  /** CS3D screen-pixel point size. 0 sizes each node from its spacing. */
+  @Input() cs3dPointSize = 0;
+  /** `perspective` or `orthographic`. */
+  @Input() cameraMode: 'perspective' | 'orthographic' = 'perspective';
 
   @Output() productsLoaded = new EventEmitter<IfcProduct[]>();
   @Output() lineworkLayersLoaded = new EventEmitter<LineworkLayer[]>();
@@ -137,6 +145,12 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     if (changes['displayParentBounds']) {
       this.tilesService.setDisplayParentBounds(this.displayParentBounds);
     }
+    if (changes['displayChunks'] || changes['cs25dPointSize'] || changes['cs3dPointSize']) {
+      this.tilesService.setLayerOptions(this.pointCloudViewFromInputs());
+    }
+    if (changes['cameraMode']) {
+      this.tilesService.setCameraMode(this.cameraMode === 'orthographic' ? 'orthographic' : 'perspective');
+    }
   }
 
   ngOnDestroy(): void {
@@ -172,7 +186,9 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
       accessToken: this.accessToken || undefined,
       displayBoxBounds: this.displayBoxBounds,
       displayParentBounds: this.displayParentBounds,
+      ...this.pointCloudViewFromInputs(),
       ...this.budgetFromInputs(),
+      cameraMode: this.cameraMode === 'orthographic' ? 'orthographic' : 'perspective',
     });
 
     const meshUrl = this.resolveMeshTilesetUrl();
@@ -207,6 +223,14 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
     if (layerErrors.length > 0) {
       throw new Error(layerErrors.join('; '));
     }
+  }
+
+  private pointCloudViewFromInputs() {
+    return {
+      displayChunks: this.displayChunks,
+      cs25dPointSize: finiteNumber(this.cs25dPointSize),
+      cs3dPointSize: finiteNumber(this.cs3dPointSize),
+    };
   }
 
   private budgetFromInputs() {
@@ -356,4 +380,9 @@ export class SdxMeshViewerComponent implements AfterViewInit, OnChanges, OnDestr
       this.loadError.emit(error instanceof Error ? error.message : String(error));
     });
   }
+}
+
+function finiteNumber(value: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }

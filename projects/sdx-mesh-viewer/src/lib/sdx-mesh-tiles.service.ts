@@ -10,6 +10,7 @@ import {
   Mesh,
   NearestFilter,
   Object3D,
+  OrthographicCamera,
   PerspectiveCamera,
   RedFormat,
   Scene,
@@ -30,6 +31,8 @@ function isAbortError(error: unknown): boolean {
 
 /** Origin-relative ENH: X east, Y north, Z height. Same frame as cube/Potree. */
 const WORLD_UP = new Vector3(0, 0, 1);
+
+export type SdxCameraMode = 'perspective' | 'orthographic';
 
 /** Unfiltered IFC tilesets omit types=; strip it so tile GLBs return every component. */
 function stripQueryParam(url: string, key: string): string {
@@ -95,6 +98,14 @@ export interface SdxMeshTilesOptions extends SdxTileBudget {
   displayBoxBounds?: boolean;
   /** Also show ancestor bounding volumes. */
   displayParentBounds?: boolean;
+  /** Wireframe the finest CS25D and CS3D chunks. */
+  displayChunks?: boolean;
+  /** CS25D screen-pixel point size. <= 0 sizes nodes from spacing. */
+  cs25dPointSize?: number;
+  /** CS3D screen-pixel point size. <= 0 sizes nodes from spacing. */
+  cs3dPointSize?: number;
+  /** Perspective or orthographic projection. */
+  cameraMode?: SdxCameraMode;
 }
 
 export interface IfcProduct {
@@ -117,6 +128,7 @@ export interface SdxMeshTilesStats {
   productsTotal: number;
   pointsVisible: number;
   pointsCached: number;
+  chunks: number;
 }
 
 const DEFAULT_BUDGET: Required<SdxTileBudget> = {
@@ -153,7 +165,11 @@ export class SdxMeshTilesService implements OnDestroy {
   private orthophotoGeneration = 0;
   private renderer: WebGLRenderer | null = null;
   private scene: Scene | null = null;
-  private camera: PerspectiveCamera | null = null;
+  private camera: PerspectiveCamera | OrthographicCamera | null = null;
+  private perspectiveCamera: PerspectiveCamera | null = null;
+  private orthographicCamera: OrthographicCamera | null = null;
+  private cameraMode: SdxCameraMode = 'perspective';
+  private readonly cameraOffset = new Vector3();
   private controls: OrbitControls | null = null;
   private animationId = 0;
   private resizeObserver: ResizeObserver | null = null;
@@ -161,6 +177,9 @@ export class SdxMeshTilesService implements OnDestroy {
   private accessToken: string | undefined;
   private displayBoxBounds = false;
   private displayParentBounds = false;
+  private displayChunks = false;
+  private cs25dPointSize = 0;
+  private cs3dPointSize = 0;
   private budget: Required<SdxTileBudget> = { ...DEFAULT_BUDGET };
 
   private products: IfcProduct[] = [];
@@ -194,9 +213,21 @@ export class SdxMeshTilesService implements OnDestroy {
     const scene = new Scene();
     scene.background = new Color(0x1a1d23);
 
-    const camera = new PerspectiveCamera(60, width / height, 0.1, 1e7);
+    const aspect = width / height;
+    const camera = new PerspectiveCamera(60, aspect, 0.1, 1e7);
     camera.up.copy(WORLD_UP);
     camera.position.set(0, -80, 40);
+    const halfHeight = 40;
+    const orthographic = new OrthographicCamera(
+      -halfHeight * aspect,
+      halfHeight * aspect,
+      halfHeight,
+      -halfHeight,
+      0.1,
+      1e7,
+    );
+    orthographic.up.copy(WORLD_UP);
+    orthographic.position.copy(camera.position);
 
     const renderer = new WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -218,9 +249,12 @@ export class SdxMeshTilesService implements OnDestroy {
 
     this.host = host;
     this.scene = scene;
+    this.perspectiveCamera = camera;
+    this.orthographicCamera = orthographic;
     this.camera = camera;
     this.renderer = renderer;
     this.controls = controls;
+    this.applyCameraMode();
 
     this.resizeObserver = new ResizeObserver(() => {
       if (!this.renderer || !this.camera || !host.isConnected) {
@@ -228,12 +262,7 @@ export class SdxMeshTilesService implements OnDestroy {
       }
       const w = Math.max(host.clientWidth, 1);
       const h = Math.max(host.clientHeight, 1);
-      this.camera.aspect = w / h;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize(w, h);
-      this.meshLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
-      this.ifcLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
-      this.lineworkLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
+      this.syncViewport(w, h);
     });
     this.resizeObserver.observe(host);
 
@@ -248,8 +277,14 @@ export class SdxMeshTilesService implements OnDestroy {
       this.meshLayer?.tiles.update();
       this.ifcLayer?.tiles.update();
       this.lineworkLayer?.tiles.update();
-      this.potreeLayers.cs25d?.update(this.camera, this.renderer, this.budget);
-      this.potreeLayers.cs3d?.update(this.camera, this.renderer, this.budget);
+      this.potreeLayers.cs25d?.update(this.camera, this.renderer, this.budget, {
+        displayChunks: this.displayChunks,
+        pointSize: this.cs25dPointSize,
+      });
+      this.potreeLayers.cs3d?.update(this.camera, this.renderer, this.budget, {
+        displayChunks: this.displayChunks,
+        pointSize: this.cs3dPointSize,
+      });
       this.renderer.render(this.scene, this.camera);
     };
     tick();
@@ -264,6 +299,18 @@ export class SdxMeshTilesService implements OnDestroy {
     }
     if (options.displayParentBounds !== undefined) {
       this.displayParentBounds = options.displayParentBounds;
+    }
+    if (options.displayChunks !== undefined) {
+      this.displayChunks = options.displayChunks;
+    }
+    if (options.cs25dPointSize !== undefined) {
+      this.cs25dPointSize = options.cs25dPointSize;
+    }
+    if (options.cs3dPointSize !== undefined) {
+      this.cs3dPointSize = options.cs3dPointSize;
+    }
+    if (options.cameraMode !== undefined) {
+      this.setCameraMode(options.cameraMode);
     }
     this.budget = {
       errorTarget: options.errorTarget ?? this.budget.errorTarget,
@@ -303,7 +350,11 @@ export class SdxMeshTilesService implements OnDestroy {
     if (!metadataUrl || !this.scene) {
       return null;
     }
-    const cloud = new SdxPotreeCloud(metadataUrl, this.accessToken);
+    const cloud = new SdxPotreeCloud(
+      metadataUrl,
+      this.accessToken,
+      kind === 'cs25d' ? 0x3ec6ff : 0xff9a3c,
+    );
     this.potreeLoading[kind] = cloud;
     try {
       await cloud.load();
@@ -445,6 +496,14 @@ export class SdxMeshTilesService implements OnDestroy {
     return this.products;
   }
 
+  setCameraMode(mode: SdxCameraMode): void {
+    if (mode !== 'perspective' && mode !== 'orthographic') {
+      return;
+    }
+    this.cameraMode = mode;
+    this.applyCameraMode();
+  }
+
   setDisplayBoxBounds(enabled: boolean): void {
     this.displayBoxBounds = enabled;
     for (const layer of [this.meshLayer, this.ifcLayer, this.lineworkLayer]) {
@@ -498,6 +557,7 @@ export class SdxMeshTilesService implements OnDestroy {
       productsTotal: this.products.length,
       pointsVisible: pointStats.visiblePoints,
       pointsCached: pointStats.loadedNodes,
+      chunks: pointStats.chunks,
     };
   }
 
@@ -534,7 +594,7 @@ export class SdxMeshTilesService implements OnDestroy {
   }
 
   private collectPointStats(): PotreeCloudStats {
-    const empty: PotreeCloudStats = { visiblePoints: 0, loadedNodes: 0, downloading: 0 };
+    const empty: PotreeCloudStats = { visiblePoints: 0, loadedNodes: 0, downloading: 0, chunks: 0 };
     for (const cloud of [this.potreeLayers.cs25d, this.potreeLayers.cs3d]) {
       if (!cloud) {
         continue;
@@ -543,6 +603,7 @@ export class SdxMeshTilesService implements OnDestroy {
       empty.visiblePoints += stats.visiblePoints;
       empty.loadedNodes += stats.loadedNodes;
       empty.downloading += stats.downloading;
+      empty.chunks += stats.chunks;
     }
     return empty;
   }
@@ -640,7 +701,118 @@ export class SdxMeshTilesService implements OnDestroy {
       combined.center.y - r * 1.2,
       combined.center.z + r * 0.6,
     );
+    if (this.camera instanceof OrthographicCamera) {
+      this.fitOrthographicFrustum(this.camera);
+    }
     this.controls.update();
+  }
+
+  private applyCameraMode(): void {
+    const next = this.cameraMode === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera;
+    if (!next || !this.controls || next === this.camera) {
+      return;
+    }
+    if (next instanceof OrthographicCamera && this.perspectiveCamera) {
+      next.position.copy(this.perspectiveCamera.position);
+      next.up.copy(WORLD_UP);
+      next.near = this.perspectiveCamera.near;
+      next.far = this.perspectiveCamera.far;
+      this.fitOrthographicFrustum(next);
+    }
+    if (next instanceof PerspectiveCamera && this.orthographicCamera) {
+      this.matchPerspectiveToOrthographic(next, this.orthographicCamera);
+    }
+    this.activateCamera(next);
+    this.controls.update();
+    next.updateMatrixWorld();
+  }
+
+  private activateCamera(camera: PerspectiveCamera | OrthographicCamera): void {
+    const previous = this.camera;
+    this.camera = camera;
+    if (this.controls) {
+      this.controls.object = camera;
+    }
+    if (!this.renderer) {
+      return;
+    }
+    for (const layer of [this.meshLayer, this.ifcLayer, this.lineworkLayer]) {
+      if (!layer) {
+        continue;
+      }
+      if (previous && previous !== camera) {
+        layer.tiles.deleteCamera(previous);
+      }
+      layer.tiles.setCamera(camera);
+      layer.tiles.setResolutionFromRenderer(camera, this.renderer);
+    }
+  }
+
+  private fitOrthographicFrustum(camera: OrthographicCamera): void {
+    if (!this.controls || !this.perspectiveCamera) {
+      return;
+    }
+    const distance = Math.max(camera.position.distanceTo(this.controls.target), 0.05);
+    const halfHeight = Math.tan((this.perspectiveCamera.fov * Math.PI) / 180 / 2) * distance;
+    const halfWidth = halfHeight * this.viewportAspect();
+    camera.zoom = 1;
+    camera.left = -halfWidth;
+    camera.right = halfWidth;
+    camera.top = halfHeight;
+    camera.bottom = -halfHeight;
+    camera.updateProjectionMatrix();
+  }
+
+  private matchPerspectiveToOrthographic(
+    perspective: PerspectiveCamera,
+    orthographic: OrthographicCamera,
+  ): void {
+    if (!this.controls) {
+      return;
+    }
+    const visibleHalfHeight =
+      Math.abs(orthographic.top - orthographic.bottom) / 2 / Math.max(orthographic.zoom, 1e-6);
+    const fovRad = (perspective.fov * Math.PI) / 180;
+    const distance = Math.max(visibleHalfHeight / Math.tan(fovRad / 2), 0.05);
+    this.cameraOffset.copy(orthographic.position).sub(this.controls.target);
+    if (this.cameraOffset.lengthSq() < 1e-8) {
+      this.cameraOffset.set(0, -1, 0.4);
+    }
+    this.cameraOffset.normalize().multiplyScalar(distance);
+    perspective.position.copy(this.controls.target).add(this.cameraOffset);
+    perspective.up.copy(WORLD_UP);
+    perspective.near = orthographic.near;
+    perspective.far = orthographic.far;
+    perspective.aspect = this.viewportAspect();
+    perspective.updateProjectionMatrix();
+  }
+
+  private syncViewport(width: number, height: number): void {
+    if (!this.renderer || !this.camera) {
+      return;
+    }
+    const aspect = width / Math.max(height, 1);
+    if (this.perspectiveCamera) {
+      this.perspectiveCamera.aspect = aspect;
+      this.perspectiveCamera.updateProjectionMatrix();
+    }
+    if (this.orthographicCamera) {
+      const halfHeight = Math.abs(this.orthographicCamera.top - this.orthographicCamera.bottom) / 2;
+      const halfWidth = halfHeight * aspect;
+      this.orthographicCamera.left = -halfWidth;
+      this.orthographicCamera.right = halfWidth;
+      this.orthographicCamera.updateProjectionMatrix();
+    }
+    this.renderer.setSize(width, height);
+    this.meshLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
+    this.ifcLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
+    this.lineworkLayer?.tiles.setResolutionFromRenderer(this.camera, this.renderer);
+  }
+
+  private viewportAspect(): number {
+    const width = Math.max(this.host?.clientWidth ?? 1, 1);
+    const height = Math.max(this.host?.clientHeight ?? 1, 1);
+    return width / height;
   }
 
   private updateCameraClipping(): void {
@@ -682,6 +854,8 @@ export class SdxMeshTilesService implements OnDestroy {
     }
     this.scene = null;
     this.camera = null;
+    this.perspectiveCamera = null;
+    this.orthographicCamera = null;
     this.host = null;
   }
 

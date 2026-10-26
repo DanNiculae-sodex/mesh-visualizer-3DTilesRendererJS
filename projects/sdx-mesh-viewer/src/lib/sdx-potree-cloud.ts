@@ -4,7 +4,10 @@ import {
   Float32BufferAttribute,
   Frustum,
   Group,
+  LineBasicMaterial,
+  LineSegments,
   Matrix4,
+  OrthographicCamera,
   PerspectiveCamera,
   Points,
   PointsMaterial,
@@ -24,6 +27,25 @@ export interface PotreeBudget {
 
 /** Drawn points per cloud. Coarser nodes stay up when a finer level would exceed this. */
 const DRAW_POINT_BUDGET = 2_000_000;
+
+/** Screen-pixel point size when the caller sets an explicit size. */
+const MIN_POINT_SIZE = 0.25;
+const MAX_POINT_SIZE = 64;
+
+const BOX_EDGES: ReadonlyArray<readonly [number, number]> = [
+  [0, 1],
+  [1, 2],
+  [2, 3],
+  [3, 0],
+  [4, 5],
+  [5, 6],
+  [6, 7],
+  [7, 4],
+  [0, 4],
+  [1, 5],
+  [2, 6],
+  [3, 7],
+];
 
 const HIERARCHY_BYTES_PER_NODE = 22;
 const NODE_TYPE_NORMAL = 0;
@@ -73,9 +95,11 @@ interface DecodeLayout {
   offset: Vector3;
 }
 
+type PotreeCamera = PerspectiveCamera | OrthographicCamera;
+
 interface SelectContext {
   frustum: Frustum;
-  camera: PerspectiveCamera;
+  camera: PotreeCamera;
   viewportHeight: number;
   errorTarget: number;
   maxDepth: number;
@@ -84,10 +108,22 @@ interface SelectContext {
   toLoad: OctreeNode[];
 }
 
+/** Per-frame drawing options for one cloud. */
+export interface PotreeView {
+  /** Wireframe the finest chunk-backed octree nodes. */
+  displayChunks: boolean;
+  /**
+   * Screen-pixel point size.
+   * Values <= 0 size each node from its spacing.
+   */
+  pointSize: number;
+}
+
 export interface PotreeCloudStats {
   visiblePoints: number;
   loadedNodes: number;
   downloading: number;
+  chunks: number;
 }
 
 /**
@@ -110,11 +146,19 @@ export class SdxPotreeCloud {
   private cacheBytes = 0;
   private frame = 0;
   private disposed = false;
-  private lastStats: PotreeCloudStats = { visiblePoints: 0, loadedNodes: 0, downloading: 0 };
+  private chunkLines: LineSegments | null = null;
+  private chunkCount = 0;
+  private lastStats: PotreeCloudStats = {
+    visiblePoints: 0,
+    loadedNodes: 0,
+    downloading: 0,
+    chunks: 0,
+  };
 
   constructor(
     private readonly metadataUrl: string,
     private readonly accessToken: string | undefined,
+    private readonly chunkColor = 0x3ec6ff,
   ) {}
 
   async load(): Promise<void> {
@@ -136,14 +180,21 @@ export class SdxPotreeCloud {
     await this.resolveProxies(root);
     this.markEmpty(root);
     this.root = root;
+    this.buildChunkOverlay();
   }
 
   update(
-    camera: PerspectiveCamera,
+    camera: PotreeCamera,
     renderer: WebGLRenderer,
     budget: PotreeBudget,
+    view: PotreeView = { displayChunks: false, pointSize: 0 },
   ): PotreeCloudStats {
-    const stats: PotreeCloudStats = { visiblePoints: 0, loadedNodes: 0, downloading: this.inflight.size };
+    const stats: PotreeCloudStats = {
+      visiblePoints: 0,
+      loadedNodes: 0,
+      downloading: this.inflight.size,
+      chunks: this.chunkCount,
+    };
     if (!this.root || this.disposed) {
       return stats;
     }
@@ -164,7 +215,8 @@ export class SdxPotreeCloud {
       toLoad: [],
     };
     this.select(this.root, ctx);
-    this.applyVisibility(ctx);
+    this.applyVisibility(ctx, view.pointSize);
+    this.syncChunks(view.displayChunks);
     this.evict(ctx.draw, budget);
     this.pumpDownloads(ctx.toLoad, budget.maxDownloadJobs);
 
@@ -193,6 +245,7 @@ export class SdxPotreeCloud {
       return;
     }
     this.disposed = true;
+    this.disposeChunks();
     this.abortAll.abort();
     for (const controller of this.inflight.values()) {
       controller.abort();
@@ -356,26 +409,30 @@ export class SdxPotreeCloud {
     }
   }
 
+  private nodeInView(node: OctreeNode, ctx: SelectContext): boolean {
+    return node.box.containsPoint(ctx.camera.position) || ctx.frustum.intersectsBox(node.box);
+  }
+
   private select(node: OctreeNode, ctx: SelectContext): boolean {
-    if (node.proxy || !ctx.frustum.intersectsBox(node.box)) {
+    if (node.proxy || !this.nodeInView(node, ctx)) {
       return false;
     }
     // Synthetic ancestors (n_points = 0) exist only to give the cube one root.
     // Always descend through them; screen-space error applies once a node has points.
+    const inside = node.box.containsPoint(ctx.camera.position);
     const hasPayload = node.numPoints > 0 && node.byteSize > 0;
     const refine =
       node.children.length > 0 &&
       node.level < ctx.maxDepth &&
-      (!hasPayload ||
-        (ctx.pointBudget.left > 0 && this.spacingPixels(node, ctx) > ctx.errorTarget));
+      (!hasPayload || this.spacingPixels(node, ctx) > ctx.errorTarget);
     if (!refine) {
-      return this.includeNode(node, ctx);
+      return this.includeNode(node, ctx, inside);
     }
 
     let drew = false;
     let pending = false;
     for (const child of node.children) {
-      if (!ctx.frustum.intersectsBox(child.box)) {
+      if (!this.nodeInView(child, ctx)) {
         continue;
       }
       if (child.numPoints > 0 && child.byteSize > 0 && !this.loaded.has(child.name)) {
@@ -385,13 +442,14 @@ export class SdxPotreeCloud {
         drew = true;
       }
     }
-    if (pending || !drew) {
-      drew = this.includeNode(node, ctx) || drew;
+    // In-parent points live on this node, at the fine cell. Keep them when the children are drawn.
+    if (hasPayload || inside || pending || !drew) {
+      drew = this.includeNode(node, ctx, hasPayload || inside) || drew;
     }
     return drew;
   }
 
-  private includeNode(node: OctreeNode, ctx: SelectContext): boolean {
+  private includeNode(node: OctreeNode, ctx: SelectContext, ignoreBudget = false): boolean {
     if (node.numPoints <= 0 || node.byteSize <= 0 || node.proxy) {
       return false;
     }
@@ -403,7 +461,7 @@ export class SdxPotreeCloud {
     if (!loaded.points) {
       return false;
     }
-    if (node.numPoints > ctx.pointBudget.left && ctx.draw.size > 0) {
+    if (!ignoreBudget && node.numPoints > ctx.pointBudget.left && ctx.draw.size > 0) {
       return false;
     }
     ctx.pointBudget.left = Math.max(0, ctx.pointBudget.left - node.numPoints);
@@ -412,12 +470,23 @@ export class SdxPotreeCloud {
   }
 
   private spacingPixels(node: OctreeNode, ctx: SelectContext): number {
-    const distance = Math.max(node.box.distanceToPoint(ctx.camera.position), node.spacing);
+    if (ctx.camera instanceof OrthographicCamera) {
+      const worldHeight =
+        Math.abs(ctx.camera.top - ctx.camera.bottom) / Math.max(ctx.camera.zoom, 1e-6);
+      if (worldHeight <= 0) {
+        return 0;
+      }
+      return (node.spacing / worldHeight) * ctx.viewportHeight;
+    }
+    // Inside the chunk the box distance is 0. Use a small floor so the projected size stays finite.
+    const distance = Math.max(node.box.distanceToPoint(ctx.camera.position), 0.05);
     const vFov = (ctx.camera.fov * Math.PI) / 180;
     return (node.spacing / distance) * (ctx.viewportHeight / (2 * Math.tan(vFov / 2)));
   }
 
-  private applyVisibility(ctx: SelectContext): void {
+  private applyVisibility(ctx: SelectContext, pointSize: number): void {
+    const explicitSize =
+      pointSize > 0 ? Math.min(MAX_POINT_SIZE, Math.max(MIN_POINT_SIZE, pointSize)) : 0;
     for (const entry of this.loaded.values()) {
       if (!entry.points) {
         continue;
@@ -429,9 +498,76 @@ export class SdxPotreeCloud {
       }
       entry.lastUsed = this.frame;
       const material = entry.points.material as PointsMaterial;
+      if (explicitSize > 0) {
+        material.size = explicitSize;
+        continue;
+      }
       const pixels = this.spacingPixels(entry.node, ctx);
       material.size = Math.min(16, Math.max(1, pixels));
     }
+  }
+
+  private buildChunkOverlay(): void {
+    if (!this.root) {
+      return;
+    }
+    this.chunkCount = 0;
+    const positions: number[] = [];
+    this.appendTerminalChunks(this.root, positions);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+    const material = new LineBasicMaterial({
+      color: this.chunkColor,
+      depthWrite: false,
+    });
+    this.chunkLines = new LineSegments(geometry, material);
+    this.chunkLines.name = 'chunks';
+    this.chunkLines.frustumCulled = false;
+    this.chunkLines.visible = false;
+    this.group.add(this.chunkLines);
+  }
+
+  private appendTerminalChunks(node: OctreeNode, positions: number[]): void {
+    const hasFinerChunk = node.children.some((child) => this.subtreeHasPayload(child));
+    if (!hasFinerChunk) {
+      if (node.numPoints <= 0 || node.byteSize <= 0) {
+        return;
+      }
+      appendBoxEdges(positions, node.box);
+      this.chunkCount += 1;
+      return;
+    }
+    for (const child of node.children) {
+      this.appendTerminalChunks(child, positions);
+    }
+  }
+
+  private subtreeHasPayload(node: OctreeNode): boolean {
+    if (node.numPoints > 0 && node.byteSize > 0) {
+      return true;
+    }
+    return node.children.some((child) => this.subtreeHasPayload(child));
+  }
+
+  private syncChunks(enabled: boolean): void {
+    if (!this.chunkLines) {
+      return;
+    }
+    this.chunkLines.visible = enabled;
+  }
+
+  private disposeChunks(): void {
+    if (!this.chunkLines) {
+      return;
+    }
+    this.group.remove(this.chunkLines);
+    this.chunkLines.geometry.dispose();
+    const material = this.chunkLines.material;
+    if (!Array.isArray(material)) {
+      material.dispose();
+    }
+    this.chunkLines = null;
+    this.chunkCount = 0;
   }
 
   private evict(draw: Set<string>, budget: PotreeBudget): void {
@@ -579,6 +715,30 @@ export class SdxPotreeCloud {
       return buffer.slice(byteOffset, byteOffset + byteSize);
     }
     return buffer;
+  }
+}
+
+function appendBoxEdges(positions: number[], box: Box3): void {
+  const { min, max } = box;
+  const corners = [
+    min.x, min.y, min.z,
+    max.x, min.y, min.z,
+    max.x, max.y, min.z,
+    min.x, max.y, min.z,
+    min.x, min.y, max.z,
+    max.x, min.y, max.z,
+    max.x, max.y, max.z,
+    min.x, max.y, max.z,
+  ];
+  for (const [a, b] of BOX_EDGES) {
+    positions.push(
+      corners[a * 3],
+      corners[a * 3 + 1],
+      corners[a * 3 + 2],
+      corners[b * 3],
+      corners[b * 3 + 1],
+      corners[b * 3 + 2],
+    );
   }
 }
 

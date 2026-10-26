@@ -102,6 +102,10 @@ export class AppComponent implements OnDestroy {
 
   displayBoxBounds = true;
   displayParentBounds = false;
+  cameraMode: 'perspective' | 'orthographic' = 'perspective';
+  displayChunks = true;
+  cs25dPointSize = 0;
+  cs3dPointSize = 0;
   catalog: CatalogCategory[] = [];
   products: CatalogProduct[] = [];
   productSearch = '';
@@ -282,6 +286,24 @@ export class AppComponent implements OnDestroy {
 
   productLabel(product: IfcProduct): string {
     return product.name?.trim() || `${product.ifc_class} #${product.express_id}`;
+  }
+
+  pointSizeLabel(size: number): string {
+    const value = Number(size);
+    if (!Number.isFinite(value) || value <= 0) {
+      return 'auto';
+    }
+    return `${value} px`;
+  }
+
+  onPointSizeChange(kind: 'cs25d' | 'cs3d', value: string | number): void {
+    const parsed = Number(value);
+    const size = Number.isFinite(parsed) ? parsed : 0;
+    if (kind === 'cs25d') {
+      this.cs25dPointSize = size;
+      return;
+    }
+    this.cs3dPointSize = size;
   }
 
   showAll(): void {
